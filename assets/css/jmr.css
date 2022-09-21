@@ -154,6 +154,10 @@ div.grid-container {
 div.contact-content :first-child {
   margin-top: 0;
 }
+.grid-container .full-width {
+  grid-column-start: 1;
+  grid-column-end: 3;
+}
 
 /*
    CONFIGURABLE PER POST
