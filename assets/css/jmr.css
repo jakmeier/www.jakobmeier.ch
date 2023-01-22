@@ -1,7 +1,32 @@
- /* Site structure */
+/* Default (light) theme variable values */
+:root {
+  --theme-color: #505050;
+  --theme-background: #FFFFFF;
+  --theme-title-color: #333;
+  --theme-title-highlight-color: #000;
+  --theme-dropdown-bg-color: #f9f9f9;
+  --theme-shadow-color: #00000033;
+}
+
+/* Overwrite for dark theme */
+[data-theme="dark"] {
+  --theme-color: #888;
+  --theme-background: #222222;
+  --theme-title-color: #AAA;
+  --theme-title-highlight-color: #CCC;
+  --theme-dropdown-bg-color: #a9a9a9;
+  --theme-shadow-color: #000;
+}
+
+/* Site structure */
 body {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
+  color: var(--theme-color);
+  background-color: var(--theme-background);
+}
+h1, h2, h3, h4, h5, h6 {
+  color: var(--theme-title-color);
 }
 h1 {
   line-height: normal;
@@ -15,6 +40,13 @@ h3 {
 h2 a {
   text-decoration: none;
 }
+a, .header a {
+  color: var(--theme-title-color);
+}
+a:hover, .header a:hover {
+  color: var(--theme-title-highlight-color);
+}
+
 
 /* Language Selector */
 
@@ -25,7 +57,7 @@ button.language-selector {
     font-size: 16px;
     border: none;
     cursor: pointer;
-    margin: 8px;
+    margin: 8px 0;
 }
 
 nav.language-selector {
@@ -36,9 +68,9 @@ nav.language-selector {
 div.dropdown {
     display: none;
     position: absolute;
-    background-color: #f9f9f9;
+    background-color: var(--theme-dropdown-bg-color);
     min-width: 130px;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    box-shadow: 0px 8px 16px 0px var(--theme-shadow-color);
     z-index: 1;
 }
 
@@ -57,6 +89,53 @@ nav.language-selector:hover .dropdown {
 
 nav.language-selector:hover button.language-selector {
     background-color: black;
+}
+
+/* Theme selector */
+.theme-selector i {
+  vertical-align: middle;
+  font-size: 32px;
+}
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 54px;
+  height: 31px;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  border-radius: 34px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+.slider:before {
+  position: absolute;
+  border-radius: 50%;
+  content: "";
+  height: 24px;
+  width: 24px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+input:checked + .slider {
+  background-color: #000000;
+}
+input:focus + .slider {
+  box-shadow: 0 0 1px black;
+}
+input:checked + .slider:before {
+  -webkit-transform: translateX(21px);
+  -ms-transform: translateX(21px);
+  transform: translateX(21px);
 }
 
 /* posts */

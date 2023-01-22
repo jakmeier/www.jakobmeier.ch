@@ -1,0 +1,29 @@
+{% assign t = site.data.settings.TEXTS %}
+
+<div class="secondary-menu">
+    <nav class="language-selector">
+        <button class="language-selector">
+            {{ t[post.lang][post.lang] }}
+            {{ t[page.lang][page.lang]}}
+        </button>
+
+        <div class="dropdown">
+            {% assign posts=site.posts | where:"ref", page.ref | sort: 'lang' %}
+            {% for post in posts %}
+            <a href="{{ post.url }}" class="{{ post.lang }}">{{ t[post.lang][post.lang] }}</a>
+            {% endfor %}
+
+            {% assign pages=site.pages | where:"ref", page.ref | sort: 'lang' %}
+            {% for page in pages %}
+            <a href="{{ page.url }}" class="{{ page.lang }}">{{ t[page.lang][page.lang] }}</a>
+            {% endfor %}
+        </div>
+    </nav>
+    <nav class="theme-selector">
+        <i class="fa fa-moon-o" aria-hidden="true"></i>
+        <label class="switch">
+            <input type="checkbox" id="theme-dark" name="theme">
+            <span class="slider"></span>
+        </label>
+    </nav>
+</div>
