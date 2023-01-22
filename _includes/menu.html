@@ -1,6 +1,7 @@
 <div class="menu">
   <nav class="menu-content">
-    {% for item in site.data.settings.menu | where_exp:"item", "item.lang == page.lang"%}
+    {% assign items = site.data.settings.menu | where_exp:"item", "item.lang == page.lang"%}
+    {% for item in items %}
       <a href="{{ site.github.url }}/{{ item.url }}">{{ item.name }}</a>
     {% endfor %}
   </nav>

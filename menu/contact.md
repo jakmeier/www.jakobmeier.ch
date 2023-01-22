@@ -4,6 +4,7 @@ title: Contact
 lang: en
 ref: contact
 disclaimer: "Opinions, facts, and statements on this site are strictly from me as a private person. They are not related to any of my past, current, or future employers."
+permalink: /contact
 ---
 My name is Jakob Meier and I like programming and building computer systems.
 

@@ -1,11 +1,11 @@
 
 menu:
-- {lang: en, name: 'Blog', path: '', url: 'index.html'}
-- {lang: de, name: 'Blog', path: '', url: 'index-de.html'}
-- {lang: en, name: 'Technology-Map', path: 'menu', url: 'techmap.html'}
-- {lang: de, name: 'Technologienkarte', path: 'menu', url: 'techmap-de.html'}
-- {lang: en, name: 'Contact', path: 'menu', url: 'contact.html'}
-- {lang: de, name: 'Kontakt', path: 'menu', url: 'contact-de.html'}
+- {lang: en, name: 'Blog', url: 'index.html'}
+- {lang: de, name: 'Blog', url: 'index-de.html'}
+- {lang: en, name: 'Technology-Map', url: 'techmap.html'}
+- {lang: de, name: 'Technologienkarte', url: 'techmap-de.html'}
+- {lang: en, name: 'Contact', url: 'contact.html'}
+- {lang: de, name: 'Kontakt', url: 'contact-de.html'}
 
 email: inbox@jakobmeier.ch
 # Change 'comments' to true for Disqus comments
@@ -37,6 +37,9 @@ TEXTS:
     home_file:
       en: index.html
       de: index-de.html
+    contact_file:
+      en: contact.html
+      de: contact-de.html
     title:
       en: Jakob's Blog 
       de: Jakobs Blog

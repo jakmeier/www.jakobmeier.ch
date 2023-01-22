@@ -4,6 +4,7 @@ title: Kontakt
 lang: de
 ref: contact
 disclaimer: "Alle Aussagen, Fakten und Meinungen die auf dieser Webseite zu finden sind, stammen ausschliesslich von mir persönlich. Sie stehen in keinerlei Hinsicht in Verbindung mit meinen vergangenen, aktuellen, oder zukünftigen Arbeitgebern."
+permalink: /contact-de
 ---
 Mein Name ist Jakob Meier, ich programmiere gerne und stelle gerne Computersysteme zusammen.
 

@@ -3,6 +3,7 @@ layout: page
 title: Technology Map
 lang: en
 ref: techmap
+permalink: /techmap
 ---
 
 These technologies have been discussed in at least one of my blog posts. Click on the icons to read about it. 
