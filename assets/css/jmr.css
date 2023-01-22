@@ -279,4 +279,7 @@ div.contact-content :first-child {
   .secondary-menu {
     margin-top: 30px;
   }
+  .content-container {
+    width: 90vw;
+  }
 }
