@@ -18,15 +18,25 @@ layout: default
 </span>
 
 {% if page.image %}
-  <img src="{{ site.github.url }}/assets/img/{{ page.image }}" title="{{ page.image_tooltip }}">
+  <img src="{{ site.github.url }}/assets/img/{{ page.image }}"  title="{{ page.image_tooltip }}">
 {% endif %}
+<article>
+  {{ content }}
+</article>
 
-{{ content }}
-
+{% if site.hide_post_date != true %}
+  {% include post-date.html %}
+{% endif %}
+{% if site.hide_post_share != true %}
+  {% include social-sharing.html %}
+{% endif %}
 {% if page.nextref %}
   <p class="jmr-next-in-series">
     {{ t.next-in-series[page.lang] }}: {% include link-with-title-by-ref.html ref=page.nextref %}
   </p>
+{% endif %}
+{% if site.data.settings.disqus.comments %}
+  {% include disqus.html %}
 {% endif %}
 
 {% include technology-stack.html %}

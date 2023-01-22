@@ -1,8 +1,10 @@
 _site
 Gemfile.lock
+*.gem
 .sass-cache
 .jekyll-metadata
 .DS_Store
 *.local
 .vscode
 appendix/**/target
+.jekyll-cache
