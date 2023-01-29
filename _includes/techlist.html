@@ -17,7 +17,7 @@
             {% else %}
                 <a href="{{ site.url }}/techs-{{page.lang}}?query={{ tech[0] }}">
             {% endif %}
-                <img src="{{ site.url }}/assets/img/techs/{{ tech[1].img }}" title="{{ tech[1].title }}">
+                <img class="tech" src="{{ site.url }}/assets/img/techs/{{ tech[1].img }}" title="{{ tech[1].title }}" id="{{ tech[0] }}">
                 <p>{{ tech[1].title }}</p>
                 <p class="uihint">{{ site.data.settings.TEXTS.find-articles[page.lang] }}</p>
             </a>

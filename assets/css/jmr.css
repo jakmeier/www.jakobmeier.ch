@@ -7,6 +7,7 @@
   --theme-dropdown-bg-color: #f9f9f9;
   --theme-shadow-color: #00000033;
   --theme-aside-bg-color: #AAA;
+  --theme-invert-svg: 0%;
 }
 
 /* Overwrite for dark theme */
@@ -18,6 +19,7 @@
   --theme-dropdown-bg-color: #a9a9a9;
   --theme-shadow-color: #000;
   --theme-aside-bg-color: #888;
+  --theme-invert-svg: 100%;
 }
 
 /* Site structure */
@@ -188,6 +190,9 @@ div.tech-img {
 }
 div.tech-content {
   margin-left: 20px;
+}
+img.tech#near, img.tech#make, img.tech#cpp {
+  filter: invert(var(--theme-invert-svg));
 }
 
 /* Code snipptes */
