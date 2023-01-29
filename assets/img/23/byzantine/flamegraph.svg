@@ -1,0 +1,1324 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   version="1.1"
+   width="607.10004"
+   height="111"
+   onload="init(evt)"
+   viewBox="0 0 607.10004 111"
+   id="svg1406"
+   sodipodi:docname="flamegraph.svg"
+   inkscape:version="0.92.5 (2060ec1f9f, 2020-04-08)">
+  <metadata
+     id="metadata1410">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="3696"
+     inkscape:window-height="2032"
+     id="namedview1408"
+     showgrid="false"
+     inkscape:pagecheckerboard="true"
+     inkscape:zoom="1.6617009"
+     inkscape:cx="543.37916"
+     inkscape:cy="-266.55889"
+     inkscape:window-x="144"
+     inkscape:window-y="54"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="frames" />
+  <!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+  <!-- NOTES:  -->
+  <defs
+     id="defs7">
+    <linearGradient
+       id="background"
+       y1="0"
+       y2="640.62469"
+       x1="0"
+       x2="0"
+       gradientTransform="matrix(1.8731716,0,0,0.53385391,81.242056,274.41761)"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         stop-color="#eeeeee"
+         offset="5%"
+         id="stop2" />
+      <stop
+         stop-color="#eeeeb0"
+         offset="95%"
+         id="stop4" />
+    </linearGradient>
+  </defs>
+  <style
+     type="text/css"
+     id="style9">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames &gt; *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+  <script
+     type="text/ecmascript"
+     id="script11"><![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]></script>
+  <text
+     id="details"
+     x="-110"
+     y="272"
+     style="font-size:12px;font-family:Verdana;fill:#000000" />
+  <text
+     id="unzoom"
+     x="-110"
+     y="-29"
+     class="hide"
+     style="font-size:12px;font-family:Verdana;display:none;fill:#000000">Reset Zoom</text>
+  <text
+     id="matched"
+     x="970"
+     y="272"
+     style="font-size:12px;font-family:Verdana;fill:#000000" />
+  <g
+     id="frames"
+     transform="translate(-120,-53)">
+    <g
+       id="g35">
+      <title
+         id="title29">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (1,103,538,079 samples, 0.74%)</title>
+      <rect
+         x="490.20001"
+         y="69"
+         width="8.8000002"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect31"
+         style="fill:#ec9733" />
+      <text
+         x="493.22"
+         y="79.5"
+         id="text33"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g43">
+      <title
+         id="title37">[libc-2.31.so] (798,992,936 samples, 0.54%)</title>
+      <rect
+         x="175.39999"
+         y="101"
+         width="6.4000001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect39"
+         style="fill:#f1e135" />
+      <text
+         x="178.42"
+         y="111.5"
+         id="text41"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g83">
+      <title
+         id="title77">curve25519_dalek::backend::serial::u64::field::FieldElement51::pow2k (144,671,983 samples, 0.10%)</title>
+      <rect
+         x="723.59998"
+         y="85"
+         width="1.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect79"
+         style="fill:#d04923" />
+      <text
+         x="726.64001"
+         y="95.5"
+         id="text81"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g115">
+      <title
+         id="title109">curve25519_dalek::backend::serial::u64::scalar::Scalar52::montgomery_mul (107,904,649 samples, 0.07%)</title>
+      <rect
+         x="725.20001"
+         y="85"
+         width="0.89999998"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect111"
+         style="fill:#e56813" />
+      <text
+         x="728.22998"
+         y="95.5"
+         id="text113"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g211">
+      <title
+         id="title205">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Sub&lt;&amp;curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::sub (2,525,787,181 samples, 1.70%)</title>
+      <rect
+         x="499"
+         y="85"
+         width="20"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect207"
+         style="fill:#f6510b" />
+      <text
+         x="501.97"
+         y="95.5"
+         id="text209"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g283">
+      <title
+         id="title277">&lt;curve25519_dalek::window::NafLookupTable5&lt;curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint&gt; as core::convert::From&lt;&amp;curve25519_dalek::edwards::EdwardsPoint&gt;&gt;::from (2,284,805,569 samples, 1.54%)</title>
+      <rect
+         x="438.79999"
+         y="85"
+         width="18.1"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect279"
+         style="fill:#df0d0a" />
+      <text
+         x="441.79999"
+         y="95.5"
+         id="text281"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g307">
+      <title
+         id="title301">curve25519_dalek::backend::serial::curve_models::ProjectivePoint::double (126,465,767 samples, 0.08%)</title>
+      <rect
+         x="455.89999"
+         y="69"
+         width="1"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect303"
+         style="fill:#d31f08" />
+      <text
+         x="458.91"
+         y="79.5"
+         id="text305"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g387">
+      <title
+         id="title381">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (706,329,588 samples, 0.47%)</title>
+      <rect
+         x="450.29999"
+         y="53"
+         width="5.5999999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect383"
+         style="fill:#f0992e" />
+      <text
+         x="453.31"
+         y="63.5"
+         id="text385"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g435">
+      <title
+         id="title429">&lt;curve25519_dalek::edwards::EdwardsPoint as core::ops::arith::Neg&gt;::neg (21,071,086 samples, 0.01%)</title>
+      <rect
+         x="726.70001"
+         y="117"
+         width="0.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect431"
+         style="fill:#ea9936" />
+      <text
+         x="729.69"
+         y="127.5"
+         id="text433"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g451">
+      <title
+         id="title445">&lt;sha2::sha512::Sha512 as digest::fixed::FixedOutputDirty&gt;::finalize_into_dirty (380,259,939 samples, 0.26%)</title>
+      <rect
+         x="120.8"
+         y="117"
+         width="3.0999999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect447"
+         style="fill:#e15635" />
+      <text
+         x="123.84"
+         y="127.5"
+         id="text449"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g515">
+      <title
+         id="title509">sha2::sha512::x86::sha512_compress_x86_64_avx2 (369,295,131 samples, 0.25%)</title>
+      <rect
+         x="120.9"
+         y="85"
+         width="3"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect511"
+         style="fill:#cf2e03" />
+      <text
+         x="123.93"
+         y="95.5"
+         id="text513"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g539">
+      <title
+         id="title533">curve25519_dalek::edwards::EdwardsPoint::vartime_double_scalar_mul_basepoint (70,024,109,694 samples, 47.06%)</title>
+      <rect
+         x="169.5"
+         y="117"
+         width="555.29999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect535"
+         style="fill:#f8531d" />
+      <text
+         x="172.5"
+         y="127.5"
+         id="text537"
+         style="font-size:12px;font-family:Verdana;fill:#000000">curve25519_dalek::edwards::EdwardsPoint::vartime_double_scalar_mul_basepoint</text>
+    </g>
+    <g
+       id="g555">
+      <title
+         id="title549">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Add&lt;&amp;curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::add (814,195,838 samples, 0.55%)</title>
+      <rect
+         x="449.5"
+         y="69"
+         width="6.4000001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect551"
+         style="fill:#d08103" />
+      <text
+         x="452.45001"
+         y="79.5"
+         id="text553"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g587">
+      <title
+         id="title581">curve25519_dalek::backend::serial::scalar_mul::vartime_double_base::mul (68,222,289,994 samples, 45.85%)</title>
+      <rect
+         x="183.8"
+         y="101"
+         width="541"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect583"
+         style="fill:#e87f33" />
+      <text
+         x="186.78"
+         y="111.5"
+         id="text585"
+         style="font-size:12px;font-family:Verdana;fill:#000000">curve25519_dalek::backend::serial::scalar_mul::vartime_double_base::mul</text>
+    </g>
+    <g
+       id="g611">
+      <title
+         id="title605">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Sub&lt;&amp;curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::sub (23,614,820 samples, 0.02%)</title>
+      <rect
+         x="182"
+         y="101"
+         width="0.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect607"
+         style="fill:#d4231b" />
+      <text
+         x="185.03"
+         y="111.5"
+         id="text609"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g635">
+      <title
+         id="title629">[libc-2.31.so] (41,306,681 samples, 0.03%)</title>
+      <rect
+         x="123.9"
+         y="117"
+         width="0.30000001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect631"
+         style="fill:#e14c03" />
+      <text
+         x="126.85"
+         y="127.5"
+         id="text633"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g643">
+      <title
+         id="title637">curve25519_dalek::backend::serial::u64::field::FieldElement51::pow2k (103,694,920 samples, 0.07%)</title>
+      <rect
+         x="456.10001"
+         y="53"
+         width="0.80000001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect639"
+         style="fill:#dbce22" />
+      <text
+         x="459.09"
+         y="63.5"
+         id="text641"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g683">
+      <title
+         id="title677">curve25519_dalek::edwards::EdwardsPoint::compress (5,713,339,541 samples, 3.84%)</title>
+      <rect
+         x="124.2"
+         y="117"
+         width="45.299999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect679"
+         style="fill:#e92032" />
+      <text
+         x="127.19"
+         y="127.5"
+         id="text681"
+         style="font-size:12px;font-family:Verdana;fill:#000000">curv..</text>
+    </g>
+    <g
+       id="g691">
+      <title
+         id="title685">criterion::bencher::Bencher&lt;M&gt;::iter (76,469,242,102 samples, 51.39%)</title>
+      <rect
+         x="120"
+         y="149"
+         width="606.40002"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect687"
+         style="fill:#de180f" />
+      <text
+         x="122.96"
+         y="159.5"
+         id="text689"
+         style="font-size:12px;font-family:Verdana;fill:#000000">criterion::bencher::Bencher&lt;M&gt;::iter</text>
+    </g>
+    <g
+       id="g779">
+      <title
+         id="title773">sha2::sha512::Engine512::finish (372,669,667 samples, 0.25%)</title>
+      <rect
+         x="120.9"
+         y="101"
+         width="3"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect775"
+         style="fill:#ee790c" />
+      <text
+         x="123.9"
+         y="111.5"
+         id="text777"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g803">
+      <title
+         id="title797">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (85,143,392 samples, 0.06%)</title>
+      <rect
+         x="124.3"
+         y="101"
+         width="0.69999999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect799"
+         style="fill:#f7a810" />
+      <text
+         x="127.32"
+         y="111.5"
+         id="text801"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g811">
+      <title
+         id="title805">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (2,182,655,098 samples, 1.47%)</title>
+      <rect
+         x="501.70001"
+         y="69"
+         width="17.299999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect807"
+         style="fill:#eba627" />
+      <text
+         x="504.69"
+         y="79.5"
+         id="text809"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g835">
+      <title
+         id="title829">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (1,151,355,681 samples, 0.77%)</title>
+      <rect
+         x="440.29999"
+         y="69"
+         width="9.1999998"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect831"
+         style="fill:#d1000b" />
+      <text
+         x="443.32001"
+         y="79.5"
+         id="text833"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g875">
+      <title
+         id="title869">curve25519_dalek::field::&lt;impl curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;::pow22501 (5,465,486,165 samples, 3.67%)</title>
+      <rect
+         x="126.1"
+         y="101"
+         width="43.400002"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect871"
+         style="fill:#eba709" />
+      <text
+         x="129.12"
+         y="111.5"
+         id="text873"
+         style="font-size:12px;font-family:Verdana;fill:#000000">curv..</text>
+    </g>
+    <g
+       id="g915">
+      <title
+         id="title909">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (743,993,678 samples, 0.50%)</title>
+      <rect
+         x="169.5"
+         y="101"
+         width="5.9000001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect911"
+         style="fill:#e0bb21" />
+      <text
+         x="172.50999"
+         y="111.5"
+         id="text913"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g923">
+      <title
+         id="title917">curve25519_dalek::scalar::Scalar::from_bytes_mod_order_wide (171,981,548 samples, 0.12%)</title>
+      <rect
+         x="724.79999"
+         y="117"
+         width="1.4"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect919"
+         style="fill:#e3ca04" />
+      <text
+         x="727.81"
+         y="127.5"
+         id="text921"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g955">
+      <title
+         id="title949">curve25519_dalek::backend::serial::curve_models::ProjectivePoint::double (197,279,406 samples, 0.13%)</title>
+      <rect
+         x="182.2"
+         y="101"
+         width="1.6"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect951"
+         style="fill:#f0471c" />
+      <text
+         x="185.21001"
+         y="111.5"
+         id="text953"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g971">
+      <title
+         id="title965">&lt;ed25519_dalek::public::PublicKey as signature::verifier::Verifier&lt;ed25519::Signature&gt;&gt;::verify (76,451,540,657 samples, 51.38%)</title>
+      <rect
+         x="120"
+         y="133"
+         width="606.20001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect967"
+         style="fill:#f9bb21" />
+      <text
+         x="122.97"
+         y="143.5"
+         id="text969"
+         style="font-size:12px;font-family:Verdana;fill:#000000">&lt;ed25519_dalek::public::PublicKey as signature::verifier::Verifier&lt;ed25519::Signatu..</text>
+    </g>
+    <g
+       id="g979">
+      <title
+         id="title973">curve25519_dalek::backend::serial::u64::field::FieldElement51::to_bytes (26,120,346 samples, 0.02%)</title>
+      <rect
+         x="125.9"
+         y="101"
+         width="0.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect975"
+         style="fill:#f2251f" />
+      <text
+         x="128.91"
+         y="111.5"
+         id="text977"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1051">
+      <title
+         id="title1045">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (1,075,264,767 samples, 0.72%)</title>
+      <rect
+         x="458.79999"
+         y="69"
+         width="8.5"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1047"
+         style="fill:#f3652c" />
+      <text
+         x="461.78"
+         y="79.5"
+         id="text1049"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1059">
+      <title
+         id="title1053">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Add&lt;&amp;curve25519_dalek::backend::serial::curve_models::AffineNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::add (1,293,614,748 samples, 0.87%)</title>
+      <rect
+         x="457.10001"
+         y="85"
+         width="10.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1055"
+         style="fill:#f4cc09" />
+      <text
+         x="460.04999"
+         y="95.5"
+         id="text1057"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1067">
+      <title
+         id="title1061">&lt;ed25519_dalek::signature::InternalSignature as core::convert::TryFrom&lt;&amp;ed25519::Signature&gt;&gt;::try_from (26,139,202 samples, 0.02%)</title>
+      <rect
+         x="726.90002"
+         y="117"
+         width="0.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1063"
+         style="fill:#fa6711" />
+      <text
+         x="729.87"
+         y="127.5"
+         id="text1065"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1083">
+      <title
+         id="title1077">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Add&lt;&amp;curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::add (18,546,228 samples, 0.01%)</title>
+      <rect
+         x="181.8"
+         y="101"
+         width="0.2"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1079"
+         style="fill:#ea8e0a" />
+      <text
+         x="184.83"
+         y="111.5"
+         id="text1081"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1091">
+      <title
+         id="title1085">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (288,347,334 samples, 0.19%)</title>
+      <rect
+         x="126.2"
+         y="85"
+         width="2.3"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1087"
+         style="fill:#d1661a" />
+      <text
+         x="129.17"
+         y="95.5"
+         id="text1089"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1107">
+      <title
+         id="title1101">curve25519_dalek::backend::serial::u64::scalar::Scalar52::from_bytes_wide (161,021,691 samples, 0.11%)</title>
+      <rect
+         x="724.79999"
+         y="101"
+         width="1.3"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1103"
+         style="fill:#dd4b14" />
+      <text
+         x="727.81"
+         y="111.5"
+         id="text1105"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1139">
+      <title
+         id="title1133">curve25519_dalek::backend::serial::u64::field::FieldElement51::pow2k (115,511,745 samples, 0.08%)</title>
+      <rect
+         x="125"
+         y="101"
+         width="0.89999998"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1135"
+         style="fill:#e70623" />
+      <text
+         x="128"
+         y="111.5"
+         id="text1137"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1195">
+      <title
+         id="title1189">curve25519_dalek::backend::serial::curve_models::ProjectivePoint::double (25,805,048,812 samples, 17.34%)</title>
+      <rect
+         x="519"
+         y="85"
+         width="204.60001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1191"
+         style="fill:#d44b18" />
+      <text
+         x="522"
+         y="95.5"
+         id="text1193"
+         style="font-size:12px;font-family:Verdana;fill:#000000">curve25519_dalek::backend:..</text>
+    </g>
+    <g
+       id="g1211">
+      <title
+         id="title1205">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (2,308,419,931 samples, 1.55%)</title>
+      <rect
+         x="470"
+         y="69"
+         width="18.299999"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1207"
+         style="fill:#d61e0b" />
+      <text
+         x="472.95999"
+         y="79.5"
+         id="text1209"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1243">
+      <title
+         id="title1237">&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51 as core::ops::arith::Mul&lt;&amp;curve25519_dalek::backend::serial::u64::field::FieldElement51&gt;&gt;::mul (28,154,887,358 samples, 18.92%)</title>
+      <rect
+         x="215.5"
+         y="85"
+         width="223.3"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1239"
+         style="fill:#df0e22" />
+      <text
+         x="218.53"
+         y="95.5"
+         id="text1241"
+         style="font-size:12px;font-family:Verdana;fill:#000000">&lt;&amp;curve25519_dalek::backend::..</text>
+    </g>
+    <g
+       id="g1299">
+      <title
+         id="title1293">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Sub&lt;&amp;curve25519_dalek::backend::serial::curve_models::AffineNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::sub (1,348,926,433 samples, 0.91%)</title>
+      <rect
+         x="488.29999"
+         y="85"
+         width="10.7"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1295"
+         style="fill:#fb850b" />
+      <text
+         x="491.28"
+         y="95.5"
+         id="text1297"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+    <g
+       id="g1307">
+      <title
+         id="title1301">curve25519_dalek::backend::serial::u64::field::FieldElement51::pow2k (21,900,001,010 samples, 14.72%)</title>
+      <rect
+         x="550"
+         y="69"
+         width="173.60001"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1303"
+         style="fill:#d99c18" />
+      <text
+         x="552.96997"
+         y="79.5"
+         id="text1305"
+         style="font-size:12px;font-family:Verdana;fill:#000000">curve25519_dalek::back..</text>
+    </g>
+    <g
+       id="g1355">
+      <title
+         id="title1349">curve25519_dalek::backend::serial::u64::field::FieldElement51::pow2k (5,171,234,855 samples, 3.48%)</title>
+      <rect
+         x="128.5"
+         y="85"
+         width="41"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1351"
+         style="fill:#ef0121" />
+      <text
+         x="131.45"
+         y="95.5"
+         id="text1353"
+         style="font-size:12px;font-family:Verdana;fill:#000000">cur..</text>
+    </g>
+    <g
+       id="g1371">
+      <title
+         id="title1365">curve25519_dalek::backend::serial::curve_models::&lt;impl core::ops::arith::Add&lt;&amp;curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint&gt; for &amp;curve25519_dalek::edwards::EdwardsPoint&gt;::add (2,643,969,315 samples, 1.78%)</title>
+      <rect
+         x="467.29999"
+         y="85"
+         width="21"
+         height="15"
+         rx="2"
+         ry="2"
+         id="rect1367"
+         style="fill:#f73b16" />
+      <text
+         x="470.31"
+         y="95.5"
+         id="text1369"
+         style="font-size:12px;font-family:Verdana;fill:#000000" />
+    </g>
+  </g>
+</svg>
