@@ -1,0 +1,254 @@
+
+The application model of today sucks. Both from a user perspective and from a developer perspective. 
+In the firs part, I rant about why it suck and what I want instead. In the second part, I show off a toy application that demonstrates what I think should be the default for user facing applications of 2023.
+
+## TLDR
+
+*Give me real-time, peer-to-peer synchronization between devices on the OS level. Make running application on multiple devices as simple as running multiple threads. Connect them through isolated private networks. Give me fine-grained network permissions where app A can only talk to the same app running on all my devices but not the general internet. Here is a demo that let's you run an app across multiple browser tabs on any device.* [TODO]
+
+## What is wrong with user applications today
+
+First, on the high-level, why would I say that is sucks? Mostly because it has been unchanged since decades. 
+Everything network related is still based on top of [Berkeley Sockets] first released 40 years ago.
+What happened to the fast moving IT sector? It seems we are just changing themes rather than the underlying system.
+
+At the heart of it is the client-server model, where some code runs on the user's device, like the browser that rendered the HTML for you to read this article. And the server, which safeguards the data on a server.
+
+This setup typically makes the client useless without a network connection to the server. This leaves you with a strong dependency on the software vendor long after you installed it. Plus, it severely hinders your experience when on a network with poor bandwidth, latency, or error rate.
+
+The rigid client-server model also limits the experiences developers can create. In the all-connected world we live in today, why is my phone not able to talk more freely with my laptop? Or my phone with your phone? Back in the days, we sent messages from one phone to another through bluetooth or even [infrared communication]. Today, the easiest way for me to share a file with you is to exchange phone numbers or social media tags and send it to you through a messaging app. Exactly the client-server model, I upload it to a server first so that you can download it from the server.
+
+I acknowledge that this is far more convenient than an IR transmissions where we both hold our phones pointed at each other. But we are comparing a very old technology which I would have expected would become more convenient to use if iterated on for 20 years.
+
+So what would I want? I would want to touch our phones together and confirm on a pop-up that I want a direct peer-to-peer connection between the two phones. I don't care about the protocol used, nor the frequencies at which the data is sent. Just give me this simple user experience and send the data from where I have to where I need it directly. No need to upload it all to our tech overlords, passing through a few dozen middleware boxes each consuming electricity and adding delay to my interaction.
+
+But this is just one example. I am trying to make a general point about how client-server applications are not always the best fit. So let me give you a list of others examples.
+
+- When I take a picture on my phone, the best way to have it on my laptop is to upload it to cloud storage. (Google Drive, iCloud, OneDrive, Dropbox etc)
+- After I get home from a run, my Garmin smartwatch needs to upload the data to the cloud before I can view it in the Garmin Connect app on my phone. Btw, the uploads happens through Garmin Connect. But without internet connection, I cannot look at the activity because it only displays the data it download from the server.
+- Let's say I am reading an article on my laptop, then I leave the house and would like to continue reading on my phone. At least modern browsers allow to "share" tabs between devices. As far as I can tell, all implementations of this are essentially glorified bookmarks stored in the cloud. In other words, they upload the currently opened URL to a server and let you download it on another device.
+- I install an app on my phone. My laptop can't interact with it in any way.
+
+## The reasons why we are stuck with this model
+
+This is the reality I got used to. But it could be better. Imagine a constant connection between your devices. Why is the application state not constantly shared and synchronized between my devices? And with synchronization, I don't mean everything is uploaded to the cloud and ready for download. No, it should be peer-to-peer between my devices, the data never leaving my house and not requiring an internet connection.
+
+Of course, I am not the first to rant about this topic. Indeed, the [Local First Cooperation][local-first] has described the problem of relying on servers in more detail and more professionally than I am doing here. But I want to go a step further and challenge the idea that an application is limited to a single device. I believe it would be better, for developers and users alike, to think of an application as something that spans multiple processes running on different devices, sharing a single distributed state. I couldn't find much literature or activity on this front, please point me in the right direction if you know of something that already exists.
+
+Another way to think about it as a user is this: I have a dual monitor setup for my desktop PC. When I drag and drop a browser window from one screen to the other, this is instant and doesn't need to reload the page. Why can't I drag it to my phone?
+
+I believe the answer has something to do with how operating systems have been working for the last 50 years, give or take. Somehow an operating system can flawlessly use multiple screens and even share them safely between multiple applications. But it cannot handle to do it across multiple devices. We run completely independent OSs on each device and each process is locked into one such OS. Sure, the OSs can communicate through the network but it's up to the developer of the app to do it, there is no built-in way that automatically shares state across devices or something like that.
+
+## Alternative application model proposal
+
+Maybe it's time to reconsider the device - OS - application mapping constraints. An application, in my opinion, should be able to be running on multiple devices at the same time. It may be displayed on multiple screens, which could be duplicated of each other or offer different views per device depending on the use case. Ideally the OS should take care of state sharing, much like it does when we run multiple threads within the same process today. 
+
+Unfortunately, the term OS is a bit of a misnomer these day. It has been overused for many things and depending on your background it will mean something else to you than to your neighbor. To make things worse, the things I'm about to propose challenge what an OS boundaries are and adds more layers to it. So to avoid misunderstandings, I will try to name the relevant components directly whenever possible.
+<!-- and use OS vaguely as the thing that combines all these components even across devices. -->
+
+
+### Application Manager
+
+Installing and starting applications is at the heart of what we want to do with our devices.
+The change has to start here.
+
+The fundamental understanding of what an application is from an OS perspective should change from "a group of threads running on this device" to "a group of processes and threads running on many devices".
+
+So, if I install an app, I don't install it on my phone or on my laptop. I install it in my "OS" and it is instantly available on all my devices to the extent that this app can work on that device.
+
+As an example for using such an app, when I start scrolling through my favorite messaging app on my phone, I could see the attached images on the larger screen of my laptop. All in real-time, there is no excuse why it should take longer to display it on my laptop than it takes to show it on my phone. Or when I open image editing software on my desktop, maybe I want to have a tablet or phone to draw with a pen. I think this is already fairly standard today, but it has to be implemented by each application anew. Or users can hack their way around ot by using some screen mirroring tools. But in my opinion, in 2023 we should demand this natively as part of the OS.
+
+On the technical side this means code has to be written to allow running on multiple devices.
+There are already byte code formats and scripting languages that run on just about any platform, we just have to put it to work. My first choice would be WASM bytecode as the executable format, which I also use in the demo.
+
+### Scheduler
+
+Let's start with the scheduler that traditionally assigns threads to CPU cores. It will keep doing that but on top also assign processes to devices. There might be constraint to which threads can run on which device, such as a 3D game's rendering thread will want to be on the same device as the strongest GPU available, but I believe most of the code could run on any device.
+
+### Device drivers
+
+Hardware drivers should still run on each device independently. But the layer that let's you share hardware between processes (two applications display something on screen at the same time) should be expanded to include to work across the device boundary.
+
+
+User input is another important piece. As a developer, I want instant, real-time knowledge of the touch screen inputs of my phone on my desktop PC. In fact, the code I write should not make any assumptions on the input. Maybe it's touch, maybe it's a cursor, maybe it's gesture recorded by a VR setup. My code should ideally handle all of those. The "UI component" of the OS will provide the inputs.
+
+### Network
+
+An interesting case of "hardware" an OS manages is the network stack. My phone and my laptop use different IPs, at least in the local network. But an application running on the two devices simultaneously doesn't care about that fact. So let's abstract away the IP based communication away and from the application developers view. They just get incoming data packages, which may come from the phone's or the laptop's internet connection. The OS's network component does the syncing. It has been doing it for decades between different CPU cores on the same device, stretching it to contain other devices isn't much of a conceptual jump.
+
+Furthermore, if the OS understands the concept of an application spanning multiple, then the application permission component can also take advantage of it. Wouldn't it be nice to have a file sharing drive app on your phone and allow it to only sync your files between your devices, but otherwise prevent it from accessing the network at all? The OS could do that for you.
+
+## What software engineers can do today
+
+"But Jakob", I hear you, the hypothetical reader in my head, ask: "How can you propose to make such drastic changes to the operating systems of today? That will never happen."
+You would be right to point this out. As I see it, these are fundamentally tasks an OS is supposed to be doing but it can also be built in normal libraries on tap. And it should be built as libraries first for experimentation. If a form of such a new application model is getting real world traction, the native OS support will follow. And eventually the hardware support (think MMU for CPUs).
+
+So this leaves me in the spot where I have to build this library to proof my point, right? Well, I'm not in the illusion that such a library would be an easy or small task. So let's shelve that idea. But perhaps I can implement a toy application as demo, that feels like this library exists already? Indeed that's what I have done.
+
+The demo is available at TODO. It does... and you can ... Please try it out. The rest of the article quickly goes over the main challenges for implementing it using today's technology stack.
+
+# Demo Time
+
+## The Demo: A CPU ray-tracer that shares the workload across devices
+
+Click the start button and a CPU ray-tracing workload will start. Click the button again and the same picture will be rendered again but with higher quality. Repeat it a few more times and you will notice a considerable slowdown in rendering time.
+
+You can now create a peer-to-peer connection between two devices if you switch to the network tab using the menu at the bottom. A random ID should appear. Press "Find Peer" on device 1, then copy the ID from device 1 into the field of device 2 before you press "Find Peer" on the second device. If both devices are in the same network, you should see a successful connection within at most a few seconds. If you are not in the same network, connecting the second device to a hotspot of your phone can be an easy way to ensure they are on the same network.
+
+Once the connection is established, you may go back to the main page and press render again. The workload is now shared between both devices, each using 4 local worker threads. You can also play around with different render quality settings if you go to the settings tab.
+
+The ray tracer is based on what  Peter Shirley, Trevor David Black, and Steve Hollasch teach in [00_Ray Tracing in One Weekend_][rt-one-weekend]. But I am taking shortcuts by using [ncollide3d][ncollide] for the ray-object-collision checks. 
+
+By default, the rendering uses 4 worker threads in the browser. Click on "Web Worker" to add another thread on this device. If you click on "Fermyon Cloud" it will connect to a WASM component. And finally, if you click on "Localhost", it will try to connect to an address running on the same machine as the browser session. More on that later.
+
+## Implementation challenges
+
+### Universal code
+Ideally write it once, compile it once, run it everywhere. Rust + WASM almost gets me there. [Fermyon/spin](https://github.com/fermyon/spin) let't me run the same WASM component on my machine and also in the cloud. This could also work in the browser but for the demo I wrote a custom JS wrapper and it requires separate compilation using [wasm-pack] and [WebPack] to bundle it as a dependency in my frontend. Ideally, it would be the other way around: the frontend is just one thread in the application which gets scheduled once per display.
+I'm super excited about the progress around in the [WASM component model][component-model] which will make this much more straight forward.
+
+### Syncing state
+Lots of custom glue code to ensure when an event triggers, such as adjusting a slider in the UI, this gets forwarded to the peer. It wouldn't seem too hard to generalize this and make it happen automagically. I am thinking an event based pub-sub framework that manages data coherence for the app developer much like a CPU manages data coherence between CPU core caches could work well. But there are several other ideas that have already been proven to work for [Local First Cooperation][local-first] software. [Conflict-free replicated data types][CRDT] are useful in this context. Or to keep it high level, the [Actyx] engine (yes, actYx with a Y, not an I) could give you durable event streams and synchronize them through p2p connections out of the box.
+
+### WebRTC signalling
+QR codes sound nice but not great because it needs to go both ways, a rendez-vous server was used in this demo
+
+### More than two peers
+Connecting two peers is only the hello world of p2p networking. I limited my demo to just two peers because things get more complicated with 3+ peers. Also, I don't handle leaving nodes at all.
+Again, the [Local First Cooperation][local-first] is far ahead of me and there are solutions already out there. I found a project called [CRATE][CRATE] from 2015 that implements a collaborative local-first text editor. It was created as part of the paper [An Adaptive Peer-Sampling Protocol for Building Networks of Browsers by B. Nédele et al.][spray-paper]
+
+### Connecting across NATs
+Sadly, middleboxes make IP addresses not as global as I wish they were and firewalls often prevent us from easily punching through this. This demo uses STUN to for a best-effort p2p connection but refuses to use TURN, which is again sending all data to a server to forward it rather than direct p2p communication. Hence it most likely won't work if your phone is connected to the internet through a cellular network but your laptop is on wifi. A VPN on one device will also prevent it from connecting to the other.
+
+### UI
+An app running across multiple devices also needs a cross-platform UI.
+
+UIs in the Rust community are a hot topic anyway. I don't want to get into it here too much but I believe there is enough demand for it that there will eventually be a Rust crate that works perfectly on all major platforms and meets the need for most use case. (Any maybe there already is, excuse my ignorance if I missed your project, I really don't follow this too much.)
+
+For my demo, I went with a web UI, allowing it to run in all browsers but not natively on any platform. For creating the web app, I used what's best described as my-pet-project-wasm-game-engine, [paddle]. If I wanted to build serious web apps, I would still use JS for the UI elements, to be honest. But I find it cool that I *can* use virtually exclusively Rust code to manipulate the DOM, render to a canvas and so on. So that's what I did.
+
+--------------------------------------
+
+Today, I draw you an image of a potential future user application architecture that spans all your devices seamlessly.
+A live demo with Rust code compiled to different WASM backends shows what I mean.
+
+# Introduction
+[Condense the blow into 3 paragraphs]
+- 1959: Users are crunching more numbers faster than ever. Primary goals: cheap & correct. Single machine, multiple programs in sequence.
+    - Time sharing for multiple programs with address space protection through limit registers, a "Director" program to orchestrate it. [https://archive.org/details/large-fast-computers]
+    - solved problem: keeping computers busy despite speed mismatch between arithmetic units and I/O. (also accidentally solves interactivity but that wasn't the goal back then)
+    - This was a new idea, today we would call the Director a kernel, or perhaps firmware. At the time, a critique was, it would be too slow to do in software.
+- today: (tech)
+  - MMUs for address isolation (provides VA abstraction)
+  - Threads to have concurrent computations on the same address space & sharing resources (allows using multiple CPU cores in parallel)
+    - thread = unit of execution (scheduling)
+    - thread context: user stack, kernel stack, registers, thread environment block, link to shared process with memory (code/data/heap)
+  - Windows API: job objects to group processes and limit/kill them together
+  - POSIX: group id for killing forked processes, cgroups (and others) for resource limiting
+  - More popular these days to group processes: docker containers
+- today (server)
+  - usage pattern: multiple machines, many processes
+  - tech: communicating through sockets, cluster management software, like Kubernetes
+- today (end user usage)
+ - People record, edit, and share GBs of media
+ - Users use multiple devices and expect great interoperability (shared drive, steam cloud, ...)
+ - Data is personal and expected to be protected
+ - Unless we want to make it public, which should be fast, easy, intuitive, and precise.
+- today (end user tech)
+  - Each device of the user probably has a different OS and UI
+  - no inherent connection, only closed ecosystems
+
+# The process model modern users deserve
+- make a photo on my phone, it is immediately available on laptop
+- install an app on my pc, it is also available on phone
+- watch a video on the laptop, move it to phone with the same delay as moving it to another screen
+- use phone touch input for game on pc
+- ALL OF THIS: peer-to-peer, usually local
+
+# WebAssembly to the rescue
+- a lightweight portable runtime
+- yes, it runs in the browser but it can run just like Java processes without a browser
+- Improvements over Java Bytecode: fast startup (citation needed) + compilation from other languages
+- My Vision:
+  - User apps are all in Wasm, they don't care if they run in a browser, on iOS, or on Windows
+  - New "Director" layer connects devices and processes running in them, in a private peer-to-peer network. (k11s for user apps)
+  - local if possible (raspberry like box, could even be an old smartphone) otherwise using a provider of choice
+
+# Challenges
+- spin specific sdk, WASI is WIP
+- multiple threads: crash (instead spawn many processes)
+- network connection
+- persistent storage
+
+
+
+
+################
+## October new take: An alternative to client-server / Is client-server architecture overused? / Why is everything client-server these days?
+
+- Client-server
+  - Server: Backend (centralized, database, authorization)
+  - Client: Frontend (UI, local data and logic)
+  - Communication: some API (e.g. HTTP calls)
+  - Isolation: Both ends run on different OSs, one is controlled by the user the other by the service
+  - Trust model: User must give all data to server, must trust the installed software to do nothing bad on local system, but at least the service doesn't need to trust the user in any way
+- Emergence of new ways to think about applications is already happening.
+  - Docker / Docker-Compose / Kubernetes is standard already on the backend
+  - Local-first as a counter point to SaaS tries to bring multi-device collaboration without client-server architecture
+  - WASM SaaS providers are popping up (TODO: so what?)
+- New idea(s), not seen formulated exactly as such anywhere:
+  - Generalize client-server with capability based nodes/threads (Caps "can display on a screen", "has camera driver", "can provide JWT", ...)
+     - (maybe a bit like HarmonyOS?)
+  - Every app has its own private network, by default no way to communicate to the outside world (but user still needs to trust the framework)
+    - Instead of communication by IP, could be by Rust type system, but that's just a quirk of my implementation of the idea
+  - WASM functions don't care where they are executed
+  - System state is held coherent (could be replicated KV-store like CouchDB, could be central server with read/write locks)
+
+
+
+
+################
+## Reading notes
+
+### Local First
+https://www.local-first-cooperation.org/
+
+1. Communicate Locally => Failure resistance
+2. Build Autonomous Parts (collaboration with other edge devices must not be required for useful function, instead buffer messages etc)
+3. Design Parts for Cooperation (Replication and conflict resolution, display things properly to users)
+4. Accept Uncertainty when Making Decisions (confidently make decisions based on incomplete information) => failure/conflict resolution preferred over blocking
+5. Foresee Dynamic Changes in the Network Neighbourhood (don't assume network topology, always react to changes, never assume some node will always be there)
+
+=> Anti SaaS ?
+
+#### How is my approach different?
+- Coherence: The system provides globally consistent view, at a cost of availability (e.g. assume a central service is always available)
+- (Not every node replicates everything)
+
+
+### Actyx
+https://github.com/Actyx/Actyx
+A decentralized event database, streaming and processing engine that allows you to easily build local-first cooperative apps.
+- durable event stream storage in peer-to-peer network using libp2p and ipfs-embed
+
+
+### SPRAY
+https://github.com/RAN3D/spray-wrtc
+WebRTC peer-to-peer network by random sampling
+Used for collaborative editor: https://web.archive.org/web/20200101022752/https://hal.archives-ouvertes.fr/hal-01303333/document
+Also this paper: https://inria.hal.science/hal-01619906/document
+
+
+[Actyx]: https://github.com/Actyx/Actyx
+[Berkeley Sockets]: https://en.wikipedia.org/wiki/Berkeley_sockets
+[component-model]: https://component-model.bytecodealliance.org/
+[CRATE]: https://github.com/Chat-Wane/CRATE
+[CRDT]: https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type
+[infrared communication]: https://en.wikipedia.org/wiki/Infrared_Data_Association
+[local-first]: https://www.local-first-cooperation.org/
+[ncollide]: https://github.com/dimforge/ncollide
+[rt-one-weekend]: https://raytracing.github.io/books/RayTracingInOneWeekend.html
+[spray-paper]: https://inria.hal.science/hal-01619906/document
+[wasm-pack]: https://github.com/rustwasm/wasm-pack
+[WebPack]: https://github.com/webpack/webpack
+[paddle]: https://github.com/jakmeier/paddle
