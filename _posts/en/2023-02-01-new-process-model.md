@@ -1,3 +1,21 @@
+---
+layout: post
+title: "TITLE TODO"
+author: "Jakob Meier"
+categories: Blogging
+tags: [rust, api, architecture, distributed-systems]
+image: 21/wip.jpg
+image_tooltip: "todo"
+# thumbnail_style: no-crop
+lang: en
+ref: new-process-model
+techs:
+---
+
+<p class="intro">
+todo
+</p>
+
 <!-- A note on how to improve the user OS experience -->
 TITLE
 
