@@ -1,12 +1,205 @@
+<!-- A note on how to improve the user OS experience -->
+TITLE
 
-The application model of today sucks. Both from a user perspective and from a developer perspective. 
-In the firs part, I rant about why it suck and what I want instead. In the second part, I show off a toy application that demonstrates what I think should be the default for user facing applications of 2023.
+Today, I write about a way I would like to develop user facing applications that
+differs from what I see today. All examples are in Rust and Rust would be my
+first choice to implement the proposed framework. That said, the ideas are not
+tied to Rust and you don't need Rust knowledge to understand this article.
+
+The intention of this article is to articulate my thoughts properly and share it
+with others and learn about their opinions. I hope you find it an interesting
+read and maybe even have some responding thoughts to share with me.
 
 ## TLDR
 
-*Give me real-time, peer-to-peer synchronization between devices on the OS level. Make running application on multiple devices as simple as running multiple threads. Connect them through isolated private networks. Give me fine-grained network permissions where app A can only talk to the same app running on all my devices but not the general internet. Here is a demo that let's you run an app across multiple browser tabs on any device.* [TODO]
+*Quick summary:*
 
-## What is wrong with user applications today
+*I imagine a cross-device app framework that let's me span an application across
+devices as easily as spanning it across CPU cores. Ideally with real-time,
+peer-to-peer synchronization between devices. Then let me install such
+cross-device apps in a sandboxed environment where they can't access the
+Internet for anything other than internal synchronization. Here is a [demo] that
+let's you run an app across multiple browser tabs on any device.*
+
+
+## Part 1: Introducing the idea
+<!-- This part is just a very rough outline and may require major restructuring -->
+- where am i coming from: 
+ - barrelfish os: not every OS kernel has to be a monolith. responsibilities can be distributed, user-space network driver on one core, other cores subscribe to it
+ - WASM: app code can be universal / universe can be implemented per host, this works on user-level capabilites without change to OS and still gives perfect isolation
+
+- what does it mean
+ - framework that does some traditional OS tasks: hardware abstraction, installing and starting apps, scheduling apps, networking stack
+
+- why?
+ - benefit: trusted framework -> isolate app from network / filesystem in more fine-grained ways than Android/iOs/Windows/macOS/... allow you to do
+ - local-first experience built in
+
+
+## Part 2: Testing the idea
+<!-- This part is in draft version 0 -->
+
+The first step to validate if this idea has any merit is to create a small toy application that demonstrates the principles.
+
+I sort of did that in this [demo] which you should be able to try out.
+It demonstrates real-time UI synchronization and cross-device work scheduling across your local network. It doesn't work if you are in different networks.
+
+The demo can render a static scene using CPU ray-tracing. The ray tracer is
+mathematically based on what Peter Shirley, Trevor David Black, and Steve
+Hollasch teach in [_Ray Tracing in One Weekend_][rt-one-weekend] and a bit of my
+own creativity sprinkled in. The (poor) implementation in Rust can be viewed at
+[jakmeier/distributed-wasm-rt-demo/clumsy-rt][clumsy-rt-src].
+
+Click the start button and a CPU ray-tracing workload will start. Click the
+button again and the same picture will be rendered again but with higher
+quality. Repeat it a few more times and you will notice a considerable slowdown
+in rendering time.
+
+If it works as intended, you should see something like this.
+
+![A screenshot of the demo. It shows a rendered scene on the top, start and stop
+buttons on the bottom left and a worker thread management view on the bottom
+right.](/assets/img/23/distributed_wasm/demo_home.png)
+
+So far, everything lives in the isolated browser tab as usual. But I want to
+show how to make this toy application run across two devices at the same time. 
+
+For this, open the [same link][demo] on another tab, or ideally on a different
+device in the same network. (It won't work if one of them is in your local Wifi
+but the other is in a cellular network.)
+
+Then you can establish a peer-to-peer connection between the two devices.
+Switch to the network tab using the menu at the bottom.
+
+![Show where to click on the network tab.](/assets/img/23/distributed_wasm/click_on_network.png#center)
+
+A random ID should appear. Press "Find Peer" on device 1 first. It will now connect to a signaling server that I'm hosting. (Yes, connection establishment requires an Internet connection and relies on this server. It's not fully local in this demo.) The signaling server is a simple service that forwards messages between two parties with a matching id. Review [the full code on GitHub](https://github.com/jakmeier/distributed-wasm-rt-demo/blob/4a15de702df1a70086d245ea35b7f84280d3c0d4/webrtc-signaling-server/src/main.rs).
+
+On your second device, replace the random id generated on this device with the
+id from the first device. Press "Find Peer" and wait. If both devices are in the
+same network, you should see a successful connection within at most a few
+seconds. Once it's fully connected, you should see the message "Connected" on
+screen. When this happens, the WebRTC connection through local network has been
+established and the Internet connection to the signaling server is no longer needed.
+
+![Connection successful screen.](/assets/img/23/distributed_wasm/p2p_success.png#center)
+
+Once the connection is established, you may go back to the main page and press
+render again. The workload is now shared between both devices, each using 4
+local worker threads.
+
+Ray-tracing is a workload about as embarrassingly parallel as possible. Hence it
+is easy to share between devices. Add more workers on one tab and you will see
+it takes over more of the work by spawning more local threads. The message
+"Total Compute: X.x s" refers to how much compute time has been spent on this
+device or tab only, you can use it to compare how much work was done by each
+device.
+
+![Two screens side-by-side with unequal amount of
+workers.](/assets/img/23/distributed_wasm/work_distribution.png)
+
+Ray-tracing can also easily be scaled up and down in complexity, with obvious
+ improvements in the output quality. Feel free to play around with different
+render quality settings if you go to the settings tab.
+
+![Connection successful screen.](/assets/img/23/distributed_wasm/settings.png)
+
+This settings tab is where the synchronized UI comes into play. Open it on both
+devices and you will see it synchronizes instantly. Because everything goes
+through the local network, it only has a few milliseconds of a delay, which
+should be virtually impossible to notice by humans.
+
+But this also allows you to change the setting on one device (e.g your phone)
+and keep the main screen open on the laptop. I think this is the real use case
+here, dynamically sharing the UI across devices and make it work as if it's on
+the same device.
+
+### External workers
+
+To take the idea of sharing work across devices a step further, I also
+integrated the ray tracer as a service into a WASM component. For this, I tried a
+few different frameworks but [Fermyon Spin](https://www.fermyon.com/spin) ended
+up as the easiest to use right now. Think ot it as AWS' lambda for WASM
+components.
+
+If you click on "Fermyon Cloud" it will connect to such a component in the cloud
+and offload some of the ray-tracing work to it. I restrict it to a single
+connection to Fermyon Cloud to not overload my plan on Fermyon cloud. But you
+can very easily run spin locally and have it serve my component. Just follow the
+instructions in [this README][spin-component]. You can then spawn as many
+connections to you local component as you want.
+
+![A mix of workers as shown in the web view.](/assets/img/23/distributed_wasm/workers_mix.png)
+
+This allows to share work between your client(s) and servers. In my demo, this
+might seem like just a gimmick. But in the modern era with more and more
+specialized hardware, I think this is legitimately useful. If your phone has an
+[AI accelerator][npu] it might make sense to do small work locally, while large
+work items should go to a big server somewhere in a datacenter. This could make
+the interface for either option one and the same.
+
+That's all for the fancy demo. Let's look into how this was built.
+
+## Part 3: Implementation
+<!-- This part is just a very rough outline and may require major restructuring -->
+
+In this last part, let's go through a few interesting components a framework for
+cross-device apps would need and what challenges I identified in my
+experimentation so far.
+
+### The network stack
+
+For our framework, we need to establish connectivity between the devices and also provide a communication layer to the apps running within the framework.
+
+#### Pairing
+
+- who to connect to and how?
+- in my experiment, I went with [WebRTC][webrtc] because that's an established standard that works in all major browsers
+ - candidate addresses need to be shared between both devices
+ - QR scans could work here, some people have done it through sound (TODO: source)
+ - simple tag ("password") and small connection establishment server did the trick in my case (not full local-first!)
+ - hence, I start with a WS connection to the NTMY helper, then messages are forwarded
+ - "upgrades" to WebRtc connection + datachannel
+ - challenge: peer-to-peer is not always possible, unless you count TURN as p2p (framework could include such a service, would probably need to be paid for) (VPNs can also be tricky?)
+
+#### Application layer networking
+- somehow users on one end must be able to send messages and they are received by the peer
+- I'm using a pub-sub pattern that allow to do `share<T: Any>(T)` and `listen<T>(Fn(T))`
+- The framework takes care of sharing these messages across devices (in the demo, only a specific type TODO is synced, everything else remains local)
+- seems like a perfect case for serde, somehow I ended up implementing it by hand (to work with blob & arraybuffer directly)
+
+#### P2P mesh
+- my demo assumes only one peer, no failures
+- a framework would need to solve this / build on top of libraries that have solved it already
+
+### UI
+- input on multiple devices: different views, resolutions, hardware sensors
+- demo: abstract over pointer events (touch/mouse) and use virtual resolution (also: don't share UI events, share logical events)
+### Application Manager
+- prepare runnable code
+  - WASM -> WebWorker
+  - Rest API to non-web sources of compute (talk about spin)
+  - the framework should be more dynamic
+  - component model: define interface (universe) and send WASM code over the network instead of statically prepared
+- schedule work
+  - I used per-device queue with work stealing: idle devices let other devices know that they have N idle threads
+  - framework would ideally be more aware of preferences where code should run ideally (don't mine bitcoin on my phone, but maybe use the NPU on my phone)
+
+## Conclusion
+
+I don't have specific plans to actually implement this framework in the near
+future. But I would love to try the architecture on a project that maybe a bit
+closer to reality. With more application-specific learnings, maybe just mabye,
+at some point it might make sense to generalize it into an actual framework.
+
+But that's all for now. I hope there were some new learning or ideas for you in
+it. In any case, I am open for feedback, either on reddit[TODO], on
+github[TODO], on near.social/near.org[TODO], or drop me a message on
+inbox@jakobmeier.ch. Thanks for reading!
+
+# Old notes, still useful for fleshing things out in more details
+
+<!-- ## What is wrong with user applications today
 
 First, on the high-level, why would I say that is sucks? Mostly because it has been unchanged since decades. 
 Everything network related is still based on top of [Berkeley Sockets] first released 40 years ago.
@@ -27,9 +220,9 @@ But this is just one example. I am trying to make a general point about how clie
 - When I take a picture on my phone, the best way to have it on my laptop is to upload it to cloud storage. (Google Drive, iCloud, OneDrive, Dropbox etc)
 - After I get home from a run, my Garmin smartwatch needs to upload the data to the cloud before I can view it in the Garmin Connect app on my phone. Btw, the uploads happens through Garmin Connect. But without internet connection, I cannot look at the activity because it only displays the data it download from the server.
 - Let's say I am reading an article on my laptop, then I leave the house and would like to continue reading on my phone. At least modern browsers allow to "share" tabs between devices. As far as I can tell, all implementations of this are essentially glorified bookmarks stored in the cloud. In other words, they upload the currently opened URL to a server and let you download it on another device.
-- I install an app on my phone. My laptop can't interact with it in any way.
+- I install an app on my phone. My laptop can't interact with it in any way. -->
 
-## The reasons why we are stuck with this model
+<!-- ## The reasons why we are stuck with this model
 
 This is the reality I got used to. But it could be better. Imagine a constant connection between your devices. Why is the application state not constantly shared and synchronized between my devices? And with synchronization, I don't mean everything is uploaded to the cloud and ready for download. No, it should be peer-to-peer between my devices, the data never leaving my house and not requiring an internet connection.
 
@@ -37,13 +230,13 @@ Of course, I am not the first to rant about this topic. Indeed, the [Local First
 
 Another way to think about it as a user is this: I have a dual monitor setup for my desktop PC. When I drag and drop a browser window from one screen to the other, this is instant and doesn't need to reload the page. Why can't I drag it to my phone?
 
-I believe the answer has something to do with how operating systems have been working for the last 50 years, give or take. Somehow an operating system can flawlessly use multiple screens and even share them safely between multiple applications. But it cannot handle to do it across multiple devices. We run completely independent OSs on each device and each process is locked into one such OS. Sure, the OSs can communicate through the network but it's up to the developer of the app to do it, there is no built-in way that automatically shares state across devices or something like that.
+I believe the answer has something to do with how operating systems have been working for the last 50 years, give or take. Somehow an operating system can flawlessly use multiple screens and even share them safely between multiple applications. But it cannot handle to do it across multiple devices. We run completely independent OSs on each device and each process is locked into one such OS. Sure, the OSs can communicate through the network but it's up to the developer of the app to do it, there is no built-in way that automatically shares state across devices or something like that. -->
 
-## Alternative application model proposal
+<!-- ## Alternative application model proposal
 
 Maybe it's time to reconsider the device - OS - application mapping constraints. An application, in my opinion, should be able to be running on multiple devices at the same time. It may be displayed on multiple screens, which could be duplicated of each other or offer different views per device depending on the use case. Ideally the OS should take care of state sharing, much like it does when we run multiple threads within the same process today. 
 
-Unfortunately, the term OS is a bit of a misnomer these day. It has been overused for many things and depending on your background it will mean something else to you than to your neighbor. To make things worse, the things I'm about to propose challenge what an OS boundaries are and adds more layers to it. So to avoid misunderstandings, I will try to name the relevant components directly whenever possible.
+Unfortunately, the term OS is a bit of a misnomer these day. It has been overused for many things and depending on your background it will mean something else to you than to your neighbor. To make things worse, the things I'm about to propose challenge what an OS boundaries are and adds more layers to it. So to avoid misunderstandings, I will try to name the relevant components directly whenever possible. -->
 <!-- and use OS vaguely as the thing that combines all these components even across devices. -->
 
 
@@ -238,6 +431,7 @@ WebRTC peer-to-peer network by random sampling
 Used for collaborative editor: https://web.archive.org/web/20200101022752/https://hal.archives-ouvertes.fr/hal-01303333/document
 Also this paper: https://inria.hal.science/hal-01619906/document
 
+<!-- links -->
 
 [Actyx]: https://github.com/Actyx/Actyx
 [Berkeley Sockets]: https://en.wikipedia.org/wiki/Berkeley_sockets
@@ -252,3 +446,8 @@ Also this paper: https://inria.hal.science/hal-01619906/document
 [wasm-pack]: https://github.com/rustwasm/wasm-pack
 [WebPack]: https://github.com/webpack/webpack
 [paddle]: https://github.com/jakmeier/paddle
+[demo]: https://demos.jakobmeier.ch/distributed_wasm/
+[webrtc]: https://webrtc.org/
+[clumsy-rt-src]: https://github.com/jakmeier/distributed-wasm-rt-demo/tree/main/clumsy-rt
+[spin-component]: https://github.com/jakmeier/distributed-wasm-rt-demo/tree/main/spin-component
+[npu]: https://en.wikipedia.org/wiki/AI_accelerator
