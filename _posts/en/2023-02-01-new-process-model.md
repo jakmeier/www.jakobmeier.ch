@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "TITLE TODO"
+title: "Exploring cross-device application development"
 author: "Jakob Meier"
 categories: Blogging
 tags: [rust, api, architecture, distributed-systems]
@@ -13,16 +13,11 @@ techs:
 ---
 
 <p class="intro">
-todo
-</p>
-
-<!-- A note on how to improve the user OS experience -->
-TITLE
-
 Today, I write about a way I would like to develop user facing applications that
 differs from what I see today. All examples are in Rust and Rust would be my
 first choice to implement the proposed framework. That said, the ideas are not
 tied to Rust and you don't need Rust knowledge to understand this article.
+</p>
 
 The intention of this article is to articulate my thoughts properly and share it
 with others and learn about their opinions. I hope you find it an interesting
@@ -40,18 +35,171 @@ Internet for anything other than internal synchronization. Here is a [demo] that
 let's you run an app across multiple browser tabs on any device.*
 
 
-## Part 1: Introducing the idea
-<!-- This part is just a very rough outline and may require major restructuring -->
-- where am i coming from: 
- - barrelfish os: not every OS kernel has to be a monolith. responsibilities can be distributed, user-space network driver on one core, other cores subscribe to it
- - WASM: app code can be universal / universe can be implemented per host, this works on user-level capabilites without change to OS and still gives perfect isolation
+## Part 1: Introducing the Idea
+<!-- This part is an incomplete draft v0 -->
 
-- what does it mean
- - framework that does some traditional OS tasks: hardware abstraction, installing and starting apps, scheduling apps, networking stack
+### Modelling Operating Systems as Distributed
+At university, I came across [the Barrelfish OS][barrelfish]. This research
+operating system has produced many publications and theses between 2008 and 2020.
 
-- why?
- - benefit: trusted framework -> isolate app from network / filesystem in more fine-grained ways than Android/iOs/Windows/macOS/... allow you to do
- - local-first experience built in
+One of the publications has the title [_Your computer is already a distributed system. Why
+isn’t your OS?_][hotos09] (2009) by A. Baumann et al. which is a great starting point.
+
+The argument is, roughly speaking, a multi-core CPU has many of the properties
+of a distributed systems, such as node heterogeneity, partial failures, and
+latency. Each CPU core is a node in this analogy.
+
+Unless you have a deeper understanding of how CPUs are architected, you may not
+find this argument very clear. But if you have learned about CPU cache
+coherence, you might remember how cores have to exchange messages between each
+other to guarantee memory consistency. For example, if a memory slot is updated
+by core 1 and core 2 is running a thread in the same address space, it needs to
+know about this update.
+
+Interestingly, this is implemented using multi-layered network protocols
+internal to the CPU, comparable to the [OSI model][osi] taught in networking
+classes. And this is what really makes a CPU look like a distributed system of
+CPU cores to me personally.
+
+The genius of this architecture is that memory looks coherent to user
+application developers. Sometimes we have to define the
+[`std::sync::atomic::Order`](https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html)
+for memory accesses to tell the OS what guarantees it should ask from the CPU.
+But generally speaking, it just works. The inherent complications of distributed
+systems are hidden.
+
+The authors of aforementioned paper go on to say that operating systems might
+benefit from an architecture where they embrace the distributed nature instead
+of relying on hardware coherence too much.
+
+The proposal, implemented in Barrelfish OS, is to run independent kernel nodes
+on each core. Global state can be maintained by sending messages between cores
+following distributed systems patterns. For example, a system call for memory
+mapping (e.g. [mmap]) would cause a two-phase-commit in the underlying
+distributed operating system. But for the developer of user-level code, it is
+still just a memory mapping system call.
+
+Flipping the idea on it's head, we can also think of the OS as a distributed
+peer-to-peer application and each core runs a client. These client run a
+CPU-driver, which can be optimized for the type of core, for example performance
+vs efficiency core.
+
+This architecture is explained more in [_The Multikernel: A new OS architecture for
+scalable multicore systems_][sosp09] (2009) by mostly the same authors. The main
+argument for the multikernel architecture seems to be that the cache coherence
+abstraction will become too costly at some point.
+
+Now, I am not here to discuss performance today. However, the distributed OS
+architecture and the techniques to make it work are the foundation for how I
+envision cross-device applications. Specifically, given an OS can be designed as
+a distributed system and hide the complication to application code, why not
+build a distributed application runtime that is as simple to use a
+non-distributed runtime?
+
+Okay this is was quite a tangent but I think it helps to understand where my
+idea is coming from. The remainder of the article will be less about operating
+systems and more about application runtime abstractions. With the goal to design
+an architecture which lets us run, for example, a code editor on multiple
+machines at the same time without worrying about the distributed nature. Think
+compiling on you arm based MacBook and running the code on an x86 machine in the
+cloud. Or drawing on your tablet and rendering on your workstation. All without
+specialized synchronization code by the application but rather have it
+abstracted in the runtime framework.
+
+### WASM: The Modern King of Portable Code
+
+I have been throwing around the term "application runtime framework". By which I
+mean a general-purpose library which manages how applications are run. This
+includes starting, stopping, and scheduling arbitrary code.
+
+To understand a specific runtime framework, one key question is what standards
+the code in question needs to fulfil. Operating systems are also application
+runtimes, among other things. In the case of Unix based systems, the code must
+adhere to the [POSIX standard][posix], while Windows has [its own
+standards][win-api]. Crucially though, both are designed to run on a single
+machine and it's not clear how to extend it to multiple machines.
+
+For _frameworks_ that build on top of operating systems, we have [Tokio][tokio]
+as a good example. Here the interface is tied to the Rust language and its
+[`Future`][future-rs] type. But again, an instance of tokio is bound to a single
+machine. If you wanted to make it schedule across many machines, that would be
+hard. You would have to figure out how to send futures across the network.
+
+I want a runtime API that makes no assumptions about the exact device the code
+is running on. Here, [WebAssembly (WASM)][wasm] comes into play. Its (upcoming)
+[component-model](https://github.com/WebAssembly/component-model) is a great
+start for a cross-device runtime.
+
+In the component model, a WASM module specifies its interface in the [WIT
+language](https://component-model.bytecodealliance.org/design/wit.html). In this
+space, the term [_WIT World_](https://component-model.bytecodealliance.org/design/worlds.html)
+is used to describe the APIs the WASM code needs from the outside and what API it provides.
+A world is also used to define the capabilities of a host, much like POSIX.
+
+This naturally leads to a runtime in which applications are defined by a set of
+components and their WIT worlds.
+
+But why stop there? In my distributed vision, we would have multiple devices on
+which the runtime can schedule the component to run on. We can now also describe
+the device capabilities as WIT worlds. For example, a phone has a touch input
+API, it has access to a front and a rear camera, acceleration sensors and so on.
+A workstation might provide access to a GPU. And both provide an API to display
+items on screen.
+
+A smart-enough, distributed runtime can match components to devices and
+magically glue calls between the components even if they have to go over the
+network.
+
+Now, this relies on WASM being completely portable. Which it is by design, at
+least on the WASM execution layer. Things become more complicated when looking
+at the component model. The commitment to a [Canonical ABI][wasm-abi] already
+solves many potential problems. But if there was shared state between
+components, that would also cause issues for our runtime. Luckily, it seems that
+the [shared-nothing approach][shared-nothing] will be the initial assumption for
+the component model, with other designs only listed as [Future
+Features][shared-something].
+
+This means it should even be potentially cheap to migrate components between
+devices, or even replicate the state in global state, if a component doesn't use
+much linear memory.
+
+*TODO: Also write about state sync? Or should it go in the implementation part only? Then maybe tease it here?*
+
+### Motivation for a Distributed Application Runtime
+
+I believe such a runtime could potentially deliver a better developer experience
+and a better user experience compared to how applications are developed today.
+For example Apple is well-known to provide cross-device experiences as long as
+you buy all products from them. I believe several Android phone vendors are
+catching up, too.
+
+But there is one project which seems to incorporate everything I've mentioned so
+far. [HarmonyOS][harmony-os] uses a multikernel architecture and has a concept
+of so-called _Super Devices_ to easily share media devices like screens and
+speakers across phone, laptops, tablets and so on. I was really excited about
+this when I hear the first rumours but got rather confused when it finally
+launched in 2019. Communication was quite unclear and there were simply no
+devices available in my area that are supported.
+
+HarmonyOS has matured a lot since then but I am still not really convinced.
+Perhaps for lack of knowledge and understanding of how it works. But in my
+current state of ignorance, I believe it is just yet another vendor-locked
+ecosystem. Which makes me sad, since their technology stack looked to me like it
+was designed to run on heterogenous nodes that could be even a browser session,
+as opposed to an app that was built from ground up with their SDK.
+
+What would be better? A Rust crate that allows to selectively sync some state
+between machines. One where you can dynamically register _super device_ on one
+instance of the app and use it in other instances. And the main binary could run
+as WASM in the browser or natively on any given device from iOS to Windows. Only
+the code that you want to run in distributed fashion would need to be WASM.
+
+But there are more benefits a framework could give. 
+
+*TODO: local-first approach?*
+
+*TODO: remove references to network isolation*
+
 
 
 ## Part 2: Testing the idea
@@ -100,7 +248,7 @@ seconds. Once it's fully connected, you should see the message "Connected" on
 screen. When this happens, the WebRTC connection through local network has been
 established and the Internet connection to the signaling server is no longer needed.
 
-![Connection successful screen.](/assets/img/23/distributed_wasm/p2p_success.png#center)
+![Connection successful screen.](/assets/img/23/distributed_wasm/p2p_success.png)
 
 Once the connection is established, you may go back to the main page and press
 render again. The workload is now shared between both devices, each using 4
@@ -469,3 +617,17 @@ Also this paper: https://inria.hal.science/hal-01619906/document
 [clumsy-rt-src]: https://github.com/jakmeier/distributed-wasm-rt-demo/tree/main/clumsy-rt
 [spin-component]: https://github.com/jakmeier/distributed-wasm-rt-demo/tree/main/spin-component
 [npu]: https://en.wikipedia.org/wiki/AI_accelerator
+[barrelfish]: https://barrelfish.org/
+[hotos09]: https://barrelfish.org/publications/barrelfish_hotos09.pdf
+[osi]: https://en.wikipedia.org/wiki/OSI_model
+[mmap]: https://www.man7.org/linux/man-pages/man2/mmap.2.html
+[sosp09]: https://barrelfish.org/publications/barrelfish_sosp09.pdf
+[tokio]: https://tokio.rs/
+[posix]: https://en.wikipedia.org/wiki/POSIX
+[win-api]: https://en.wikipedia.org/wiki/Windows_API
+[future-rs]: https://doc.rust-lang.org/std/future/trait.Future.html
+[wasm]: https://webassembly.org/
+[wasm-abi]: https://component-model.bytecodealliance.org/design/canonical-abi.html
+[shared-something]: https://github.com/yowl/wasm-component-model/blob/9c6863135145d0e815fa6cb6f3f249397c6ea748/design/mvp/FutureFeatures.md
+[shared-nothing]: https://github.com/yowl/wasm-component-model/blob/9c6863135145d0e815fa6cb6f3f249397c6ea748/design/mvp/Explainer.md#component-invariants
+[harmony-os]: https://www.harmonyos.com/en/
