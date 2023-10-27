@@ -29,14 +29,14 @@ read and maybe even have some responding thoughts to share with me.
 
 *I imagine a cross-device app framework that let's me span an application across
 devices as easily as spanning it across CPU cores. Ideally with real-time,
-peer-to-peer synchronization between devices. Then let me install such
-cross-device apps in a sandboxed environment where they can't access the
-Internet for anything other than internal synchronization. Here is a [demo] that
-let's you run an app across multiple browser tabs on any device.*
+peer-to-peer synchronization between devices. I argue this doesn't require you
+to share your data with anyone and certainly does not necessitate vendor-lock.
+Here is a proof of concept [demo] that let's you run an app across multiple
+browser tabs on any device.*
 
 
 ## Part 1: Introducing the Idea
-<!-- This part is an incomplete draft v0 -->
+<!-- This part is a draft v0 -->
 
 ### Modelling Operating Systems as Distributed
 At university, I came across [the Barrelfish OS][barrelfish]. This research
@@ -163,7 +163,13 @@ This means it should even be potentially cheap to migrate components between
 devices, or even replicate the state in global state, if a component doesn't use
 much linear memory.
 
-*TODO: Also write about state sync? Or should it go in the implementation part only? Then maybe tease it here?*
+Beyond moving around entire components, I also have thoughts on how to
+synchronize smaller pieces of state through a convenient API. In short, use an
+[`AnyMap`][anymap]-like API to access data which is managed by the framework. A
+hidden distributed read-write lock per managed object then ensures that anytime
+I get a `&mut` reference the the data, it is properly exclusive access, across
+all devices. But I'm getting ahead of myself. The remainder of the
+implementation details are postponed to part three of the article.
 
 ### Motivation for a Distributed Application Runtime
 
@@ -173,30 +179,27 @@ For example Apple is well-known to provide cross-device experiences as long as
 you buy all products from them. I believe several Android phone vendors are
 catching up, too.
 
-But there is one project which seems to incorporate everything I've mentioned so
-far. [HarmonyOS][harmony-os] uses a multikernel architecture and has a concept
-of so-called _Super Devices_ to easily share media devices like screens and
-speakers across phone, laptops, tablets and so on. I was really excited about
-this when I hear the first rumours but got rather confused when it finally
-launched in 2019. Communication was quite unclear and there were simply no
-devices available in my area that are supported.
+[HarmonyOS][harmony-os] is the most interesting to me, from a technical
+perspective. (It uses a multikernel architecture building on the ideas from
+previously mentioned papers!) The user experience also seems pretty good. But
+the biggest problem, I can't really try any of it here in Europe.
 
-HarmonyOS has matured a lot since then but I am still not really convinced.
-Perhaps for lack of knowledge and understanding of how it works. But in my
-current state of ignorance, I believe it is just yet another vendor-locked
-ecosystem. Which makes me sad, since their technology stack looked to me like it
-was designed to run on heterogenous nodes that could be even a browser session,
-as opposed to an app that was built from ground up with their SDK.
+However, I believe a cross-platform framework would be cooler than anything
+locked in to a specific OS. It may not provide the same level of integration.
+And it seems the line between traditional OS tasks and the proposed framework is
+getting blurry, with a layer of application management in the framework that
+seems to duplicate tasks already done by the OS. However, browsers do that too.
+What I am proposing might as well be a browser plugin that synchronizes tab
+state across devices following a well-defined API. More details in part 3 of
+this article.
 
-What would be better? A Rust crate that allows to selectively sync some state
-between machines. One where you can dynamically register _super device_ on one
-instance of the app and use it in other instances. And the main binary could run
-as WASM in the browser or natively on any given device from iOS to Windows. Only
-the code that you want to run in distributed fashion would need to be WASM.
+A final quick note before we leave the conceptual level for a more practical
+approach: Not vendor-locking also means not relying on anyone's third party
+cloud storage. If I were to implement this framework, I think a big selling
+point would be that it does not funnel all the data and metadata through big
+tech servers.
 
-But there are more benefits a framework could give. 
-
-*TODO: local-first approach?*
+Next up, part 2, it is demo time!
 
 *TODO: remove references to network isolation*
 
@@ -631,3 +634,4 @@ Also this paper: https://inria.hal.science/hal-01619906/document
 [shared-something]: https://github.com/yowl/wasm-component-model/blob/9c6863135145d0e815fa6cb6f3f249397c6ea748/design/mvp/FutureFeatures.md
 [shared-nothing]: https://github.com/yowl/wasm-component-model/blob/9c6863135145d0e815fa6cb6f3f249397c6ea748/design/mvp/Explainer.md#component-invariants
 [harmony-os]: https://www.harmonyos.com/en/
+[anymap]: https://docs.rs/anymap/latest/anymap/
