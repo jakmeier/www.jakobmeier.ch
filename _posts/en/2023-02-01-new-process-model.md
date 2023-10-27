@@ -199,11 +199,7 @@ cloud storage. If I were to implement this framework, I think a big selling
 point would be that it does not funnel all the data and metadata through big
 tech servers.
 
-Next up, part 2, it is demo time!
-
-*TODO: remove references to network isolation*
-
-
+Next up, it is demo time!
 
 ## Part 2: Testing the idea
 <!-- This part is in draft version 0 -->
@@ -242,7 +238,7 @@ Switch to the network tab using the menu at the bottom.
 
 ![Show where to click on the network tab.](/assets/img/23/distributed_wasm/click_on_network.png#center)
 
-A random ID should appear. Press "Find Peer" on device 1 first. It will now connect to a signaling server that I'm hosting. (Yes, connection establishment requires an Internet connection and relies on this server. It's not fully local in this demo.) The signaling server is a simple service that forwards messages between two parties with a matching id. Review [the full code on GitHub](https://github.com/jakmeier/distributed-wasm-rt-demo/blob/4a15de702df1a70086d245ea35b7f84280d3c0d4/webrtc-signaling-server/src/main.rs).
+A random ID should appear. Press "Find Peer" on device 1 first. It will now connect to a signaling server that I'm hosting. (Yes, connection establishment requires an Internet connection and relies on this server. It's not fully local in this demo.) The signaling server is a simple service that forwards messages between two parties with a matching id. Review [the full code on GitHub][signaling-server-main].
 
 On your second device, replace the random id generated on this device with the
 id from the first device. Press "Find Peer" and wait. If both devices are in the
@@ -307,56 +303,159 @@ specialized hardware, I think this is legitimately useful. If your phone has an
 work items should go to a big server somewhere in a datacenter. This could make
 the interface for either option one and the same.
 
-That's all for the fancy demo. Let's look into how this was built.
+That's all for the fancy demo. Time to get more technical.
 
 ## Part 3: Implementation
 <!-- This part is just a very rough outline and may require major restructuring -->
 
-In this last part, let's go through a few interesting components a framework for
-cross-device apps would need and what challenges I identified in my
-experimentation so far.
+In this last part, let's go through a few interesting components and challenges
+a distributed application runtime has to solve. Creating this demo gave me a
+better feeling for at least some of them. So let's jump in.
 
-### The network stack
+### Device Pairing
 
-For our framework, we need to establish connectivity between the devices and also provide a communication layer to the apps running within the framework.
+As mentioned earlier, I want to use peer-to-peer networking. The main
+alternative is a client-server architecture. But that comes with additional
+latency, infrastructure cost, and potential privacy concerns. I believe it makes
+fundamentally more sense to build it on peer-to-peer basis, even if it can be
+harder to implement.
 
-#### Pairing
+The [Local First Cooperation][local-first] also advertises for mor software to
+be written without server dependence. And indeed, it is a good starting point to
+look for solutions. For example, you might have seen that [Actyx] recently
+announced their open-source release, naming it a [radically distributed
+foundation for local-first software][actyx-announcement]. (Careful, this is
+Act_y_x with a Y, not an I, it has nothing to do with the popular actor system!)
+This looks perfect to use and let the years of development that was sunk into it
+do the peer-to-peer connections and syncing.
 
-- who to connect to and how?
-- in my experiment, I went with [WebRTC][webrtc] because that's an established standard that works in all major browsers
- - candidate addresses need to be shared between both devices
- - QR scans could work here, some people have done it through sound (TODO: source)
- - simple tag ("password") and small connection establishment server did the trick in my case (not full local-first!)
- - hence, I start with a WS connection to the NTMY helper, then messages are forwarded
- - "upgrades" to WebRtc connection + datachannel
- - challenge: peer-to-peer is not always possible, unless you count TURN as p2p (framework could include such a service, would probably need to be paid for) (VPNs can also be tricky?)
+However, I did not know about Actyx when I started writing my demo. Furthermore,
+I wanted to experience the fundamental problems when implementing it myself.
+Hence I decided to not build on existing libraries for device pairing. I ended
+up using the [WebRTC][webrtc] more directly.
 
-#### Application layer networking
+WebRTC connection establishment is largely done by the browser side
+implementation of the web API. However, it obviously needs an initial input on
+both ends to or else it cannot know how to find the other device in the world
+wide web.
+
+This initial input exchange needs to be done off-band somehow. QR codes could
+work here and seemed most promising to me at first. But when I realized that the
+exchange is a stream of trickling information pieces, the QR solution became
+less attractive.
+
+You see, when opening a WebRTC connection, the browser starts
+listing hierarchical candidate IPs and ports under which the device may be
+available from the outside. The most local candidates are available rather
+quickly, but the full information may only be available many seconds later.
+
+So because I don't really want to scan a QR code for each trickling candidate,
+it would take some time before a complete QR code can be displayed. And even
+then, a single QR code is not enough as the data has to be exchanged both ways.
+
+So I forgot about QR codes and instead went with the easiest solution, which is
+an external signaling server that both clients connect to. Using [Axum][axum] as
+a base web server, it was not too much effort to write the [server
+code][signaling-server-main].
+
+There is no standard protocol to follow here but its not rocket science to come
+with some simple protocol that works just fine. I call my protocol the
+Nice-To-Meet-You protocol (NTMY) and you can quickly understand it by reading
+the comments on each of the involved messages.
+
+```rust
+// TODO: inline the definition
+```
+*source: https://github.com/jakmeier/distributed-wasm-rt-demo/blob/main/ntmy/src/lib.rs*
+
+Note that this signaling server is only required for connection establishment.
+Once it is established, it works in proper local-first fashion.
+
+To tie this all back to the demo, the flow there is as follows.
+
+1. Random ID is generated locally.
+2. When the user clicks "Find peer" on one device, we start gathering ICE
+   candidates for the WebRTC connction. At the same time, we start a connection
+   to signalling server with the local ID.
+3. As ICE candidates trickle in, we forward them to the signaling server, which
+   buffers them.
+4. The user copies the ID from device one to device two.
+5. The user clicks "Find peer" on the second device. Again ICE candidate
+   gathering starts and a connection to the signaling server is established. The
+   signaling server immediately responds with all the buffered ICE candidates of
+   device one. Further candidates are no longer buffered but instead forwarded
+   directly. In both directions.
+6. Both devices receive a stream of ICE candidates, which they register at the
+   browser.
+7. At some point, the two browsers will have found each other. At this point,
+   peer-to-peer communication is possible and the connection to the signaling
+   server is dropped.
+
+That's how device pairing works in my demo. Everything builds on well-established
+standards and techniques. It's ready to be used in your application, too!
+
+However, there is a catch due to the unfortunate state of the Internet Protocol
+and middleboxes. Sadly, it is impossible, in certain circumstances, to punch a
+whole through firewalls to establish a peer-to-peer connection. [_Peer-to-Peer
+Communication Across Network Address Translators_][p2pnat] is a great resource
+to read up on the problem if you are not familiar with it, yet. But all you need
+to know is, sometimes you just cannot get an IP/port pair of your device that
+another device can connect to directly. And thus [Traversals Using Relays around
+NATs (TURN)][turn-rfc] was born, which, in my opinion, is not peer-to-peer. It
+just gives the same API as peer-to-peer but it actually relays bit-by-bit
+through a server, giving up the majority of benefits we wanted from p2p.
+
+Hence, I think a reasonable limitation, at the very least for the demo, is to
+say it only works if both devices can indeed discover each other. This should
+always be true if both devices are connected to the same WiFi router. Or if one
+device creates a hot-spot and the other connects to it, that also works. But
+this is one of the limitations you might run into when trying out my demo with
+your friends at the bar and you are both connecting to cellular internet.
+
+Here I have to admit that deep OS and even hardware integration makes the task
+easier. They can much easier use other protocols than IP. But I think requiring
+devices to be in the same network is not too bad, it may even be seen as a
+security feature rather than a usability bug. It's all matter of perspective and
+marketing.
+
+### P2P mesh
+TODO? Worth to talk about CRATE and SPRAY?
+<!-- Connecting two devices is a great start. It can be repeated for all devices and
+in principle this means all devices are connected. However, connecting every
+device with every other device is not very practical. Leaving network scaling
+issues aside, just imagine you have to copy a new tag from one device to other
+for every pair of devices.
+
+
+- my demo assumes only one peer, no failures
+- a framework would need to solve this / build on top of libraries that have solved it already -->
+
+### Data Synchronization
 - somehow users on one end must be able to send messages and they are received by the peer
 - I'm using a pub-sub pattern that allow to do `share<T: Any>(T)` and `listen<T>(Fn(T))`
 - The framework takes care of sharing these messages across devices (in the demo, only a specific type TODO is synced, everything else remains local)
 - seems like a perfect case for serde, somehow I ended up implementing it by hand (to work with blob & arraybuffer directly)
 
-#### P2P mesh
-- my demo assumes only one peer, no failures
-- a framework would need to solve this / build on top of libraries that have solved it already
-
-### UI
-- input on multiple devices: different views, resolutions, hardware sensors
-- demo: abstract over pointer events (touch/mouse) and use virtual resolution (also: don't share UI events, share logical events)
-### Application Manager
+### Code Execution
+- can't just send `Box<Fn()>` across the network
 - prepare runnable code
   - WASM -> WebWorker
   - Rest API to non-web sources of compute (talk about spin)
   - the framework should be more dynamic
   - component model: define interface (universe) and send WASM code over the network instead of statically prepared
+
+### Scheduling
 - schedule work
   - I used per-device queue with work stealing: idle devices let other devices know that they have N idle threads
   - framework would ideally be more aware of preferences where code should run ideally (don't mine bitcoin on my phone, but maybe use the NPU on my phone)
 
+### UI
+- input on multiple devices: different views, resolutions, hardware sensors
+- demo: abstract over pointer events (touch/mouse) and use virtual resolution (also: don't share UI events, share logical events)
+
 ## Conclusion
 
-I don't have specific plans to actually implement this framework in the near
+I don't have concrete plans to actually implement this framework in the near
 future. But I would love to try the architecture on a project that maybe a bit
 closer to reality. With more application-specific learnings, maybe just mabye,
 at some point it might make sense to generalize it into an actual framework.
@@ -365,6 +464,7 @@ But that's all for now. I hope there were some new learning or ideas for you in
 it. In any case, I am open for feedback, either on reddit[TODO], on
 github[TODO], on near.social/near.org[TODO], or drop me a message on
 inbox@jakobmeier.ch. Thanks for reading!
+
 
 # Old notes, still useful for fleshing things out in more details
 
@@ -635,3 +735,8 @@ Also this paper: https://inria.hal.science/hal-01619906/document
 [shared-nothing]: https://github.com/yowl/wasm-component-model/blob/9c6863135145d0e815fa6cb6f3f249397c6ea748/design/mvp/Explainer.md#component-invariants
 [harmony-os]: https://www.harmonyos.com/en/
 [anymap]: https://docs.rs/anymap/latest/anymap/
+[actyx-announcement]: https://www.reddit.com/r/rust/comments/16zqpql/announcing_actyx_a_radically_distributed/
+[signaling-server-main]: https://github.com/jakmeier/distributed-wasm-rt-demo/blob/4a15de702df1a70086d245ea35b7f84280d3c0d4/webrtc-signaling-server/src/main.rs
+[axum]: https://github.com/tokio-rs/axum
+[p2pnat]: https://bford.info/pub/net/p2pnat/
+[turn-rfc]: https://www.rfc-editor.org/rfc/rfc8656
