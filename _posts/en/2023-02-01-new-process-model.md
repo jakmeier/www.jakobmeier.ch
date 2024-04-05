@@ -413,10 +413,11 @@ this is one of the limitations you might run into when trying out my demo with
 your friends at the bar and you are both connecting to cellular internet.
 
 Here I have to admit that deep OS and even hardware integration makes the task
-easier. They can much easier use other protocols than IP. But I think requiring
+easier. They can much easier use alternative protocols to IP.
+ <!-- But I think requiring
 devices to be in the same network is not too bad, it may even be seen as a
 security feature rather than a usability bug. It's all matter of perspective and
-marketing.
+marketing. -->
 
 ### P2P mesh
 TODO? Worth to talk about CRATE and SPRAY?
@@ -430,11 +431,114 @@ for every pair of devices.
 - my demo assumes only one peer, no failures
 - a framework would need to solve this / build on top of libraries that have solved it already -->
 
-### Data Synchronization
+### Easy Data Synchronization
+
+<!-- From an API perspective, there are two general classes for how data is synchronized between clients. Either it is  -->
+
+For the easiest API to synchronize devices, I want to hide as much as possible
+of the synchronization from programmers. One way to achieve that would be the
+approach I believe I first experienced while working with CouchDB. The client
+reads and writes the data from a source which is automatically synchronized.
+Some kind of conflict handler is necessary but for the most part it feels as if
+there is a single big disk for all clients.
+
+Today, I present a slightly different idea which is inspired by cache coherence
+as implemented in hardware. When a CPU thread reads a cache line, it will first
+acquire a read-lock of that line. When it want to write, it requires a
+write-lock. Or in more common hardware terms, to write, a cache line must be in
+the local cache as "Exclusive (`E`)" or "Owned (`O`)".
+
+The exact states will differ between CPUs and documentation on a specific model
+is often hard to come by, especially without signing a NDA. But there are books
+about how it works. (TODO: links to some MOESI resources)
+
+The best part about CPU cache line locking is that they implement a distributed
+read-write lock system. For writing, `E` means I can modify the value, no
+strings attached. `O` means I can modify the value but there may be other cores
+holding a read-only copy. When I update the value, I must notify them about the
+change, either by sending them an updated value or by invalidating their data.
+In what order these things happen and how much blocking there is depends on the
+serialization guarantees required.
+
+What is often not taught in introduction classes to MOESI protocols are the
+intermediate states. But they are crucial to understand why this really is a
+distributed locking system.
+
+For example, when you hold a line in a `Shared` state but you want to write to
+it, then you need to request `Owned` access. But the API to acquire it is
+asynchronous and you have to keep responding to other messages while awaiting
+the response to your request. Hence, the local cache line is set to an
+intermediate state called something like `Shared transitioning into Owned`, or
+`S2O` for short. While in this state, we might have to update the value because
+someone else wrote the data and they notify us with an updated value.
+
+A similar approach can work across nodes in a peer-to-peer system with shared
+state. Pieces of data are shared between nodes and a distributed lock protocol
+keeps everything coherent. But there are two API design questions that need an
+answer.
+
+1. What is the unit of lockable data, analogue to cache lines?
+2. How should programmers acquire a lock of the data?
+
+As I said, I want to design the framework in Rust, so for point one, I think any
+serializable Rust data type can work as a lockable data type. Essentially, the
+API looks like an
+[`anymap::Map`](https://docs.rs/anymap/latest/anymap/struct.Map.html) which is
+magically synchronized in the background.
+
+Regarding the second point, `anymap` uses `map.get()` and `map.get_mut()` as the
+locking API. This *could* work for a distributed lock per item, too. But it
+would be a very leaky abstraction, in the sense that programmers would have to
+be acutely aware they are locking data. Because careless locking of two items at
+once can lead to dead-locks otherwise. (Node 0 acquire A then B, node 1 acquire
+B then A, both get the first lock but will never get the second.)
+
+Instead, I propose an event handler based approach, where each handler defines
+upfront what locks it needs. The runtime can then invisibly lock all data items
+as needed before calling the handler. Potential deadlock issues can be resolved
+in the runtime.
+
+Again, this locking API is not something I came up with on my own. I first saw
+it in [specs], where handlers are called systems and the necessary locks are
+specified through
+[`SystemData`](https://specs.amethyst.rs/docs/tutorials/06_system_data). It
+allows to specify locks right in the system function signature, using tuples of
+`ReadStorage` and `WriteStorage` elements.
+
+```rust
+fn system_run(
+  &mut self,
+  (apple, banana): (WriteStorage<Apple>, ReadStorage<Banana>)
+) {
+  // Inside the handle, you can read/write `apple`
+  // and you can read from `banana`. Without blocking.
+}
+```
+
+In specs, this allows to schedule parallel systems if they don't conflict in the
+data they need to write. In my case, I need it to ensure handlers across
+multiple devices don't conflict.
+
+For the demo, I used an older experiment that I coded a few years back. I called
+it `nuts` and the [code is on Github](https://github.com/jakmeier/nuts). Sadly,
+I never managed to finish the blog post about this particular project. But the
+preparation for how some of it works is described in [_Untapped potential in
+Rust's type system_](https://www.jakobmeier.ch/Untapped-Rust), although the
+title is misleading at this point. I *wanted* to write about how a handler with
+`&mut` can automatically be converted to a distributed exclusive access lock and
+how nicely that fits in with Rust's type system. But alas, I realized that there
+are too many missing pieces and I don't have the time to fully implement it. So
+the post ended maybe at 30% towards my initial idea. As pointed out in the
+reddit discussion at the time (TODO: link) I should have updated the title.
+
+WIP here <=================
+
 - somehow users on one end must be able to send messages and they are received by the peer
 - I'm using a pub-sub pattern that allow to do `share<T: Any>(T)` and `listen<T>(Fn(T))`
 - The framework takes care of sharing these messages across devices (in the demo, only a specific type TODO is synced, everything else remains local)
 - seems like a perfect case for serde, somehow I ended up implementing it by hand (to work with blob & arraybuffer directly)
+
+<!-- TODO: reference to transaction memory? -->
 
 ### Code Execution
 - can't just send `Box<Fn()>` across the network
@@ -740,3 +844,4 @@ Also this paper: https://inria.hal.science/hal-01619906/document
 [axum]: https://github.com/tokio-rs/axum
 [p2pnat]: https://bford.info/pub/net/p2pnat/
 [turn-rfc]: https://www.rfc-editor.org/rfc/rfc8656
+[specs]: https://github.com/amethyst/specs
