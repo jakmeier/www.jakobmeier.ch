@@ -1,0 +1,9 @@
+[package]
+name = "wasm-signature-checker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ed25519-compact = "2"
+hex = "0.4"
+anyhow = "1"
