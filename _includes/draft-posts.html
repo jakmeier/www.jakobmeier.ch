@@ -1,9 +1,9 @@
-{% assign posts=site.posts | where:"lang", page.lang | where_exp:"item", "item.draft != true" %}
+{% assign posts=site.posts | where:"lang", page.lang | where_exp:"item", "item.draft == true" %}
 {% for post in posts %}
 <div class="posts">
-  <h1>
+  <h2>
     <a href="{{ site.github.url }}{{ post.url }}">{{ post.title }}</a>
-  </h1>
+  </h2>
   {% include preview-post.html %}
 </div>
 {% endfor %}

@@ -1,0 +1,35 @@
+digraph ControlFlowGraph {
+    node [shape=box, fontname="Courier", fontsize=24];
+    edge [fontname="Helvetica", fontsize=24];
+
+    block0 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">(local i32)</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 0</TD></TR>
+        <TR><TD ALIGN="LEFT">local.set 0</TD></TR>
+    </TABLE>>];
+
+    block1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">local.get 0</TD></TR>
+        <TR><TD ALIGN="LEFT">call $print_num</TD></TR>
+        <TR><TD ALIGN="LEFT">local.get 0</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 1</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.add</TD></TR>
+        <TR><TD ALIGN="LEFT">local.tee 0</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 1000</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.ne</TD></TR>
+        <TR><TD ALIGN="LEFT">br_if 0</TD></TR>
+    </TABLE>>];
+
+    block3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">i32.const 1048576 (; "done" ;)</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 4</TD></TR>
+        <TR><TD ALIGN="LEFT">call $print</TD></TR>
+    </TABLE>>];
+
+    end [label=end];
+
+    block0 -> block1 [label="enter loop"]
+    block1 -> block3 [label="exit loop"];
+    block1 -> block1 [label="repeat loop"; dir="back"];
+    block3 -> end    ;
+}

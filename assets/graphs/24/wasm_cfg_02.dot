@@ -1,0 +1,66 @@
+digraph ControlFlowGraph {
+    node [shape=box, fontname="Courier", fontsize=24];
+    edge [fontname="Helvetica", fontsize=24];
+
+    block0 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">(local i32)</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 0</TD></TR>
+        <TR><TD ALIGN="LEFT">local.set 0</TD></TR>
+    </TABLE>>];
+
+    block1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">local.get 0</TD></TR>
+        <TR><TD ALIGN="LEFT">call $print_num</TD></TR>
+    </TABLE>>];
+
+    block2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">local.get 0</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 1</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.add</TD></TR>
+        <TR><TD ALIGN="LEFT">local.tee 0</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 1000</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.ne</TD></TR>
+        <TR><TD ALIGN="LEFT">br_if 0</TD></TR>
+    </TABLE>>];
+
+    block3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">i32.const 1048576 (; "done" ;)</TD></TR>
+        <TR><TD ALIGN="LEFT">i32.const 4</TD></TR>
+        <TR><TD ALIGN="LEFT">call $print</TD></TR>
+    </TABLE>>];
+
+    end [label=end];
+
+    init [shape=ellipse style=filled fillcolor=darkslategrey fontcolor=white label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">gas +2</TD></TR>
+        <TR><TD ALIGN="LEFT">stack +8</TD></TR>
+        <TR><TD ALIGN="LEFT">frame +1</TD></TR>
+    </TABLE>>];
+
+    loop_entrance [shape=ellipse style=filled fillcolor=darkslategrey fontcolor=white label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">gas +2</TD></TR>
+    </TABLE>>];
+
+    mid_loop [shape=ellipse style=filled fillcolor=darkslategrey fontcolor=white label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">gas +7</TD></TR>
+    </TABLE>>];
+
+    after_loop [shape=ellipse style=filled fillcolor=darkslategrey fontcolor=white label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">gas +3</TD></TR>
+    </TABLE>>];
+
+    exit_cost [shape=ellipse style=filled fillcolor=darkslategrey fontcolor=white label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+        <TR><TD ALIGN="LEFT">stack −8</TD></TR>
+    </TABLE>>];
+
+    init -> block0  ;
+    block0 -> loop_entrance [label="enter loop"];
+    loop_entrance -> block1 ;
+    block1 -> mid_loop ;
+    mid_loop -> block2 ;
+    block2 -> after_loop [label="exit loop"];
+    after_loop -> block3 ;
+    block2 -> loop_entrance [label="repeat loop"];
+    block3 -> exit_cost   ;
+    exit_cost -> end   ;
+}
