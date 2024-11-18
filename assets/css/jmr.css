@@ -168,6 +168,12 @@ p.jmr-next-in-series {
   margin: 100px 0;
 }
 
+video.center {
+  display: block;
+  margin: auto;
+  max-width: 95%;
+}
+
 img[src*='#center'] {
   display: block;
   margin: auto;
